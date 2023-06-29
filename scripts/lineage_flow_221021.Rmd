@@ -66,13 +66,15 @@ theme_list <- list(theme_classic(),
                color = "grey20"))
 
 #shared graph list for stacked bar charts
-theme_stacked_chart_list <- list(geom_bar(stat = "identity"), 
+theme_stacked_chart_list <- list(geom_bar(stat = "identity", position = "dodge"), 
   scale_fill_brewer(),
   scale_y_continuous(limits = c(0,15),
                      expand = c(0,0),
                      minor_breaks = seq(0, 15 , 1)),
   ylab("Number of Donors"),
-  geom_text(position = position_stack(vjust = 0.5)),
+  geom_text(size = 3.5,
+            position = position_dodge(width = 0.9),
+            vjust = 1.25),
   theme_classic(),
   theme(axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, vjust = 1),
@@ -82,7 +84,7 @@ theme_stacked_chart_list <- list(geom_bar(stat = "identity"),
 
 Section 4: Plotting donor cohort summaries
 ```{r Plotting Donor Summaries}
-###make a table for simple donor summaries
+#make a table for simple donor summaries
 dfDonors <- dfFresh %>%
   distinct(Donor, Disease_Status, Age, Sex, Aabs, GADpos, LOD)
 
@@ -90,7 +92,9 @@ dfDonors <- dfFresh %>%
 sexCount <- count(dfDonors, Disease_Status, Sex)
 
 donorN <- ggplot(sexCount, aes(x = Disease_Status, y = n, fill = Sex, label = n)) +
-  theme_stacked_chart_list
+  theme_stacked_chart_list + 
+  scale_y_continuous(limits = c(0,10),
+                     expand = c(0,0))
 
 donorN
 plot <- "donorN"
@@ -99,7 +103,7 @@ ggsave(filename = plot,
   plot = donorN,
   path = "~/Betts_Code/T1D-Immuno-Atlas/outs/pdf/221026_3groups/",
   device = "pdf",
-  width = 1.2 * number_of_cats,
+  width = 1.4 * number_of_cats,
   height = 3,
   units = "in",
   dpi = 300)
@@ -111,7 +115,7 @@ donorAge <- ggplot(dfDonors, aes(Disease_Status, Age,
   scale_y_continuous(limits = c(0,40),
                      expand = c(0,0)) +
   #xlab("Disease Status") +
-  ylab("Number of Donors") +
+  ylab("Donor Age (years)") +
   theme_list
 
 donorAge
@@ -127,16 +131,19 @@ ggsave(filename = plot,
   dpi = 300)
 
 # number of AAbs for each disease group (red outlined is GAD+)
-aabCount <- count(dfDonors, Disease_Status, Aabs)
+aabCount <- count(dfDonors, Disease_Status, Aabs) %>%
+  complete(Disease_Status, Aabs, fill = list(n = 0))
+aabCountLabel <- mutate(aabCount, n = ifelse(n == 0, 0, NA))
 
 donorAAbs <- ggplot(aabCount, aes(Disease_Status, n,
                                   fill = Aabs,
                                   label = n)) +
-  geom_bar(stat = "identity") +
-  scale_fill_distiller() +
-  scale_y_continuous(limits = c(0,15.2), expand = c(0,0)) +
+  geom_col(position = position_dodge2(preserve = "single", width = 0.9), color = "grey20") +
+  scale_fill_distiller(direction = 1) +
+  scale_y_continuous(limits = c(-0.05,15.2), expand = c(0,0)) +
   ylab("Number of Donors") +
-  geom_text(position = position_stack(vjust = 0.5)) +
+  geom_text(data = aabCountLabel, position = position_dodge2(width = 0.9),
+    vjust = -0.5, size = 3.5)  +
   theme_classic() +
   theme(axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, vjust = 1),
@@ -150,8 +157,8 @@ ggsave(filename = plot,
   plot = donorAAbs,
   path = "~/Betts_Code/T1D-Immuno-Atlas/outs/pdf/221026_3groups/",
   device = "pdf",
-  width = 1.2 * number_of_cats,
-  height = 3,
+  width = 1.6 * number_of_cats,
+  height = 2.5,
   units = "in",
   dpi = 300)
 
@@ -233,7 +240,8 @@ ggsave(filename = plot,
 
 #Plotting how many donors have all pLN
 dfpLNTissues <- count(dfTissues, Disease_Status, all_pLN)
-dfpLNTissues <- mutate(dfpLNTissues, all_pLN = replace_na(dfpLNTissues$all_pLN, FALSE))
+dfpLNTissues <- mutate(dfpLNTissues, all_pLN = replace_na(dfpLNTissues$all_pLN, FALSE)) %>%
+  complete(Disease_Status, all_pLN, fill = list(n = 0))
 
 donorpLN <- ggplot(dfpLNTissues, aes(x = Disease_Status, y = n, fill = all_pLN, label = n)) +
   theme_stacked_chart_list

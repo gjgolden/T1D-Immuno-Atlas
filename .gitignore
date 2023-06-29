@@ -1,0 +1,7 @@
+.DS.Store
+data/
+metadata/
+outs/
+.Rproj.user
+.RData
+.Rhistory

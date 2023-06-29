@@ -16,6 +16,7 @@ Section 1: Install Requisite Packages
 library(dplyr)
 library(tidyr)
 library(ggplot2)
+library(rstatix)
 ```
 
 Section 2: Data from the HPAP Lineage Flow Cytometry Panel (CSV of percentages) is imported and readied for further analysis
@@ -73,13 +74,15 @@ theme_list <- list(theme_classic(),
                color = "grey20"))
 
 #shared graph list for stacked bar charts
-theme_stacked_chart_list <- list(geom_bar(stat = "identity"), 
+theme_stacked_chart_list <- list(geom_bar(stat = "identity", position = "dodge"), 
   scale_fill_brewer(),
   scale_y_continuous(limits = c(0,15),
                      expand = c(0,0),
                      minor_breaks = seq(0, 15 , 1)),
   ylab("Number of Donors"),
-  geom_text(position = position_stack(vjust = 0.5)),
+  geom_text(size = 3.5,
+            position = position_dodge(width = 0.9),
+            vjust = 1.25),
   theme_classic(),
   theme(axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, vjust = 1),
@@ -89,7 +92,7 @@ theme_stacked_chart_list <- list(geom_bar(stat = "identity"),
 
 Section 4: Plotting donor cohort summaries
 ```{r Plotting Donor Summaries}
-###make a table for simple donor summaries
+#make a table for simple donor summaries
 dfDonors <- dfFresh %>%
   distinct(Donor, Disease_Status, Age, Sex, Aabs, GADpos, LOD)
 
@@ -97,7 +100,9 @@ dfDonors <- dfFresh %>%
 sexCount <- count(dfDonors, Disease_Status, Sex)
 
 donorN <- ggplot(sexCount, aes(x = Disease_Status, y = n, fill = Sex, label = n)) +
-  theme_stacked_chart_list
+  theme_stacked_chart_list + 
+  scale_y_continuous(limits = c(0,10),
+                     expand = c(0,0))
 
 donorN
 plot <- "donorN"
@@ -106,7 +111,7 @@ ggsave(filename = plot,
   plot = donorN,
   path = "~/Betts_Code/T1D-Immuno-Atlas/outs/pdf/221026_4groups/",
   device = "pdf",
-  width = 1.2 * number_of_cats,
+  width = 1.4 * number_of_cats,
   height = 3,
   units = "in",
   dpi = 300)
@@ -118,11 +123,10 @@ donorAge <- ggplot(dfDonors, aes(Disease_Status, Age,
   scale_y_continuous(limits = c(0,40),
                      expand = c(0,0)) +
   #xlab("Disease Status") +
-  ylab("Donor Age") +
+  ylab("Donor Age (years)") +
   theme_list
 
 donorAge
-
 plot <- "donorAge"
 number_of_cats <- 4
 ggsave(filename = plot,
@@ -135,16 +139,19 @@ ggsave(filename = plot,
   dpi = 300)
 
 # number of AAbs for each disease group (red outlined is GAD+)
-aabCount <- count(dfDonors, Disease_Status, Aabs)
+aabCount <- count(dfDonors, Disease_Status, Aabs) %>%
+  complete(Disease_Status, Aabs, fill = list(n = 0))
+aabCountLabel <- mutate(aabCount, n = ifelse(n == 0, 0, NA))
 
 donorAAbs <- ggplot(aabCount, aes(Disease_Status, n,
                                   fill = Aabs,
                                   label = n)) +
-  geom_bar(stat = "identity") +
-  scale_fill_distiller() +
-  scale_y_continuous(limits = c(0,15.2), expand = c(0,0)) +
+  geom_col(position = position_dodge2(preserve = "single", width = 0.9), color = "grey20") +
+  scale_fill_distiller(direction = 1) +
+  scale_y_continuous(limits = c(-0.05,15.2), expand = c(0,0)) +
   ylab("Number of Donors") +
-  geom_text(position = position_stack(vjust = 0.5)) +
+  geom_text(data = aabCountLabel, position = position_dodge2(width = 0.9),
+    vjust = -0.5, size = 3.5)  +
   theme_classic() +
   theme(axis.title.x = element_blank(),
         axis.title.y = element_text(size = 14, vjust = 1),
@@ -158,8 +165,8 @@ ggsave(filename = plot,
   plot = donorAAbs,
   path = "~/Betts_Code/T1D-Immuno-Atlas/outs/pdf/221026_4groups/",
   device = "pdf",
-  width = 1.2 * number_of_cats,
-  height = 3,
+  width = 1.6 * number_of_cats,
+  height = 2.5,
   units = "in",
   dpi = 300)
 
@@ -203,7 +210,8 @@ dfTissues <- dfFresh %>%
 
 #Plotting how many donors have at least one pLN, one mesenteric LN, and Spleen
 dfPMSTissues <- count(dfTissues, Disease_Status, PMS)
-dfPMSTissues <- mutate(dfPMSTissues, PMS = replace_na(dfPMSTissues$PMS, FALSE))
+dfPMSTissues <- mutate(dfPMSTissues, PMS = replace_na(dfPMSTissues$PMS, FALSE)) %>%
+  complete(Disease_Status, PMS, fill = list(n = 0))
 
 donorPMS <- ggplot(dfPMSTissues, aes(x = Disease_Status, y = n, fill = PMS, label = n)) +
   theme_stacked_chart_list
@@ -222,7 +230,8 @@ ggsave(filename = plot,
 
 #Plotting how many donors have all pLN, all mesenteric LN, and Spleen
 dfAllTissues <- count(dfTissues, Disease_Status, all)
-dfAllTissues <- mutate(dfAllTissues, all = replace_na(dfAllTissues$all, FALSE))
+dfAllTissues <- mutate(dfAllTissues, all = replace_na(dfAllTissues$all, FALSE)) %>%
+  complete(Disease_Status, all, fill = list(n = 0))
 
 donorAllTissues <- ggplot(dfAllTissues, aes(x = Disease_Status, y = n, fill = all, label = n)) +
   theme_stacked_chart_list
@@ -241,7 +250,8 @@ ggsave(filename = plot,
 
 #Plotting how many donors have all pLN
 dfpLNTissues <- count(dfTissues, Disease_Status, all_pLN)
-dfpLNTissues <- mutate(dfpLNTissues, all_pLN = replace_na(dfpLNTissues$all_pLN, FALSE))
+dfpLNTissues <- mutate(dfpLNTissues, all_pLN = replace_na(dfpLNTissues$all_pLN, FALSE)) %>%
+  complete(Disease_Status, all_pLN, fill = list(n = 0))
 
 donorpLN <- ggplot(dfpLNTissues, aes(x = Disease_Status, y = n, fill = all_pLN, label = n)) +
   theme_stacked_chart_list
@@ -258,6 +268,62 @@ ggsave(filename = plot,
   units = "in",
   dpi = 300)
 
+#Create a Tissue by Donor Grid
+dfTissueGrid <- dfTissues %>%
+  select(1:12) %>%
+  select(!c(Thymus, Islet_Sup)) %>%
+  relocate(PBMC, .after = Spleen) %>%
+  relocate(HEAD_LN, .after = Disease_Status) %>%
+  relocate(MES_LN, .after = Tail_LN) %>%
+  mutate(Donor = gsub("HPAP", "", Donor))
+dfTissueGrid <- dfTissueGrid %>%
+  mutate(across(.cols = 3:ncol(dfTissueGrid), .fns = ~ ifelse(is.na(dfTissueGrid$.x), FALSE, TRUE)))
+dfTissueGrid <- dfTissueGrid %>%
+  pivot_longer(3:ncol(dfTissueGrid), names_to = "Tissue", values_to = "Analyzed")
 
+tissueGrid <- ggplot(dfTissueGrid, aes(Donor, factor(Tissue, c("Whole_Blood", "PBMC", "Spleen", "SMA_LN", "MES_LN", "Tail_LN", "BODY_LN", "HEAD_LN")))) +
+  geom_tile(aes(fill = Analyzed)) +
+  scale_fill_brewer() +
+  xlab("Donor ID") +
+  theme_classic() +
+  theme(axis.title.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_blank(),
+        axis.text.x = element_text(size = 8, color = "black", angle = 45, vjust = 1, hjust = 1),
+        axis.text.y = element_text(size = 10, color = "black"))
+tissueGrid
+plot <- "donorTissues"
+ggsave(filename = plot,
+  plot = tissueGrid,
+  path = "~/Betts_Code/T1D-Immuno-Atlas/outs/pdf/221026_4groups/",
+  device = "pdf",
+  width = 7,
+  height = 2.5,
+  units = "in",
+  dpi = 300)
 ```
+
+Compare immune population frequencies between different scientists
+```{r}
+MetricPop <- unique(dfFresh$metric)
+
+dfScientistStat <- dfFresh %>%
+  filter(Staining_Flow_Researcher == "Greg" | Staining_Flow_Researcher == "Alberto") %>%
+  filter(LN_type == "pLNs") %>%
+  filter(Disease_Status == "ND") %>%
+  group_by(metric) %>%
+  wilcox_test(percent ~ Staining_Flow_Researcher) %>%
+  adjust_pvalue() %>%
+  filter(p.adj < 0.05)
+
+g <- dfFresh %>%
+  filter(metric %in% dfScientistStat$metric) %>%
+  filter(Disease_Status == "ND") %>%
+  ggplot(aes(Staining_Flow_Researcher, percent, color = Staining_Flow_Researcher)) +
+  geom_jitter() +
+  theme_classic() +
+  facet_wrap(~metric)
+
+g
+```
+
 

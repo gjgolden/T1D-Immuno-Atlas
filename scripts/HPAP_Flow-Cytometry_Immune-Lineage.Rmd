@@ -1,0 +1,138 @@
+---
+title: "HPAP_Flow-Cytometry_Immune-Lineage"
+author: "Gregory_Golden"
+date: "2023-06-28"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r Setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Section 1: Install Requisite Packages
+```{r Section 1: Packages}
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(rstatix)
+```
+
+
+Section 2: Data from the HPAP Lineage Flow Cytometry Panel (CSV file of percentages) is imported and readied for further analysis
+```{r Section 2: Data Import}
+df <- read.csv("./data/Lineage_MasterV3.csv", 
+               check.names = FALSE,
+               stringsAsFactors = FALSE)
+
+df <- df %>%
+  mutate(across(.cols = "CD45+":ncol(df), .fns = ~ str_replace_all(., "%$", ""))) %>%
+  mutate(across(.cols = "CD45+":ncol(df), .fns = ~ as.numeric(.))) %>%
+  mutate(across(.cols = "CD45+":ncol(df), .fns = ~ case_when(. < 0.01 ~ 0.005, TRUE ~ as.numeric(.)))) %>%
+  mutate("Age" = as.numeric(df$Age)) %>%
+  mutate("Aabs" = as.numeric(df$Aabs)) %>%
+  mutate(LN_type = case_when(str_detect(Tissue, "_pLN$") ~ "pLN",
+                             str_detect(Tissue, "_mLN$") ~ "mLN",
+                             Tissue == "Spleen" ~ "Spleen",
+                             Tissue == "PBMC" ~ "PBMC",
+                             Tissue == "Whole_Blood" ~ "Whole_Blood",
+                             Tissue == "Tonsil" ~ "Tonsil",
+                             Tissue == "Thymus" ~ "Thymus",
+                             Tissue == "Islet_Sup" ~ "Islet")) %>%
+  relocate(LN_type, .after = Tissue)
+
+dfLong <- df %>%
+  pivot_longer(cols = c(`CD45+`:ncol(.)), names_to = "metric", values_to = "value")
+
+dfFresh <- filter(dfLong, `Fresh/Thawed` == "fresh")
+```
+
+
+Section 3: Create commonly used parameters for plot creation
+```{r Section 3: Common Plot Parameters}
+#shared graph element list for grey/blue/orange ND/AAb/T1D
+theme_list <- list(theme_classic(),
+        theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14, vjust = 1),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")),
+        scale_shape_manual(values = c(22, 21, 23, 24)),
+        scale_fill_manual(values = c("#949494", "#2E96FF", "#FF8B3D", "purple")),
+        geom_point(size = 2.7, show.legend = FALSE, stroke = 0.5, 
+                   color = "grey40",position = position_jitterdodge(
+                     jitter.width = 1.2, dodge.width = 0.5)),
+        stat_summary(geom = "errorbar",
+               fun.min = function(z) {quantile(z, 0.25)},
+               fun.max = function(z) {quantile(z, 0.75)},
+               width = 0.2,
+               size = 1,
+               color = "grey20"),
+        stat_summary(fun = median,
+               geom = "crossbar",
+               width = 0.3,
+               size = 0.5,
+               show.legend = FALSE,
+               color = "grey20"))
+
+#shared graph list for stacked bar charts
+theme_stacked_chart_list <- list(geom_bar(stat = "identity", position = "dodge"), 
+  scale_fill_brewer(),
+  scale_y_continuous(limits = c(0,15),
+                     expand = c(0,0),
+                     minor_breaks = seq(0, 15 , 1)),
+  ylab("Number of Donors"),
+  geom_text(size = 3.5,
+            position = position_dodge(width = 0.9),
+            vjust = 1.25),
+  theme_classic(),
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_text(size = 14, vjust = 1),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")))
+```
+
+
+Section 4: Compare immune population frequencies between different scientists
+```{r Section 4: Scientist Comparisons}
+dfScientistStat <- dfFresh %>%
+  filter(Staining_Flow_Researcher == "Greg" | Staining_Flow_Researcher == "Alberto") %>%
+  filter(LN_type == "pLN") %>%
+  filter(`Disease Status` == "ND") %>%
+  filter(!str_detect(metric, "Tnaive1 CD127.CD27.")) %>% #all filtered values are 0, stats test would fail
+  filter(!str_detect(metric, "Tnaive1 CD127.")) %>% #all filtered values are 100, stats test would fail
+  filter(!str_detect(metric, "Tnaive1 CD27.")) %>% #all filtered values are 100, stats test would fail
+  group_by(metric) %>%
+  wilcox_test(value ~ Staining_Flow_Researcher) %>%
+  adjust_pvalue() %>%
+  filter(p.adj < 0.05)
+
+ScientistComp <- dfFresh %>%
+  filter(metric %in% dfScientistStat$metric) %>%
+  filter(`Disease Status` == "ND") %>%
+  ggplot(aes(Staining_Flow_Researcher, value, color = Staining_Flow_Researcher)) +
+  geom_jitter(size = 1) +
+  theme_classic() +
+  facet_wrap(~metric, scales = "free_y")
+
+ScientistComp
+
+#Results show that there are several parameters that differ between researchers, mainly in PD1, HLA-DR, and CD25 on certain CD4+ T cells. This could be due to differential flow cytometery parameter settings on the cytometer (antibody titrations or conjugations did not change between researchers). 
+#Populations that were significantly different between researchers were filtered (see below), keeping the researcher's results (Greg) who analyzed the data and compiled it for the manuscript.
+
+ScientistFilter <- c("CD4 Mem PD1+", "CD4 Tcm PD1+", "CD4 Tem PD1+", "CD4 Temra PD1+", "CD4 Tnaive PD1+", "CD4 Tnaive1 PD1+", "CD4 Tnaive1- PD1+", "CD4 Tem HLA-DR+", "CD4 Temra HLA-DR+", "CD4 Tcm HLA-DR+", "CD8 Temra HLA-DR+", "CD4 Tem HLA-DR+ CD38+", "CD4 Temra HLA-DR+ CD38+", "CD4 Tcm HLA-DR+ CD38+", "CD8 Temra HLA-DR+ CD38+", "CD4 Tcm CD25+", "CD4 Tnaive1- CD25+", "CD4 Tnaive CD25+")
+
+dfScientistFilter <- dfFresh %>%
+  filter(Staining_Flow_Researcher == "Alberto") %>%
+  filter(metric %in% ScientistFilter)
+
+dfLineage <- anti_join(dfFresh, dfScientistFilter)
+```
+
+
+Section 5: Tissue Distribution of Immmune Populations
+```{r Section 5: Tissue Distribution}
+
+```
+
