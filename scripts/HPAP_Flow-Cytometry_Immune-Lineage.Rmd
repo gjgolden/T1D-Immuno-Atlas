@@ -18,6 +18,9 @@ library(stringr)
 library(tidyr)
 library(ggplot2)
 library(rstatix)
+library(forcats)
+library(ComplexHeatmap)
+library(circlize)
 ```
 
 
@@ -26,6 +29,8 @@ Section 2: Data from the HPAP Lineage Flow Cytometry Panel (CSV file of percenta
 df <- read.csv("./data/Lineage_MasterV3.csv", 
                check.names = FALSE,
                stringsAsFactors = FALSE)
+
+df <- select(df, 1:`CD4 Tnaive1- CD127+`)
 
 df <- df %>%
   mutate(across(.cols = "CD45+":ncol(df), .fns = ~ str_replace_all(., "%$", ""))) %>%
@@ -47,6 +52,14 @@ dfLong <- df %>%
   pivot_longer(cols = c(`CD45+`:ncol(.)), names_to = "metric", values_to = "value")
 
 dfFresh <- filter(dfLong, `Fresh/Thawed` == "fresh")
+
+#due to a more specific naive T cell gating strategy, the Tnaive population (CD45RA+CCR7+) was separated into two populations based upon CD27 and CD127 expression: Tnaive1 (CD27+CD127+ naive T cells, bona fide naive) and Tnaive 1- (all other CD45RA+CCR7+ T cells). The Tnaive population will be filtered out, since it encompasses all CD45RA+CCR7+ T cells and is redundant/less specific.
+dfFresh <- dfFresh %>%
+  filter(!str_detect(metric, "Tnaive ")) %>%
+  filter(!str_detect(metric, "Tnaive$"))
+
+#Thymus and mixed pLN are not standard HPAP tissues, and therefore will be filtered out
+dfFresh <- filter(dfFresh, Tissue != "Thymus", Tissue != "pLN_mix_pLN")
 ```
 
 
@@ -131,8 +144,65 @@ dfLineage <- anti_join(dfFresh, dfScientistFilter)
 ```
 
 
-Section 5: Tissue Distribution of Immmune Populations
+Section 5: Tissue Distribution of Immune Populations
 ```{r Section 5: Tissue Distribution}
+#violin plotting all flow cytometry gates across all HPAP tissues
+TissuePheno_AllGates <- dfLineage %>%
+  mutate(Tissue = fct_relevel(Tissue, "Whole_Blood", "PBMC","Spleen", "SMA_mLN", "MES_mLN", "Head_pLN", "Body_pLN", "Tail_pLN", "Islet_Sup")) %>%
+  ggplot(aes(Tissue, value)) +
+  geom_violin(draw_quantiles = c(0.25,0.50,0.75)) +
+  facet_wrap(vars(metric), scales = "free_y") +
+  theme(strip.text = element_text(size = 6),
+        axis.text.x = element_text(angle = 45, hjust = 1))
 
+TissuePheno_AllGates
+
+#generate a df that is compatible with heatmap generation
+dfHeatmapNorm <- dfLineage %>%
+  filter(Tissue != "PBMC") %>% #removed since PBMCs have artifacts in the neutrophil counts due to long term storage
+  filter(Tissue != "Islet_Sup") %>% #removed since it is not a standard HPAP tissue
+  filter(Tissue != "Whole_Blood") %>% #removed since it is not a standard HPAP tissue
+  group_by(metric) %>%
+  mutate(z_score = scale(value)) %>%
+  select("HPAP Donor":metric,z_score)
+
+#heatmap of major immune cell population distribution across HPAP tissues
+LineageList <- c("Eosinophils", "Neutrophils", "B cells","ILCs", "Imm. Granulocytes", "HSCs", "DCs", "Monocytes", "NK cells", "DEs", "T cells", "CD8+ (%Tcells)", "CD4+ (%T cells)")
+
+LinTissueOrder <- c("Spleen", "Head_pLN", "Body_pLN", "Tail_pLN", "SMA_mLN", "MES_mLN")
+LinTissueColors <- list(`Tissue` = c("Whole_Blood" = "red", "Spleen" =  "darkred","SMA_mLN" = "forestgreen", "MES_mLN" = "greenyellow", "Head_pLN" = "royalblue4", "Body_pLN" = "royalblue1", "Tail_pLN" = "skyblue1"))
+
+dfTotalLineageHeatmap <- dfHeatmapNorm %>%
+  mutate(metric = str_replace(metric, " \\(%CD45\\+\\)", "")) %>%
+  mutate(metric = str_replace(metric, " \\(%CD45\\)", "")) %>%
+  pivot_wider(names_from = metric, values_from = z_score) %>%
+  select(SampleVariablesLin, LineageList) %>%
+  mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
+  relocate(Sample_ID, .before = `HPAP Donor`)
+
+dfTotalLineageHeatmap <- as.data.frame(dfTotalLineageHeatmap)
+rownames(dfTotalLineageHeatmap) <- dfTotalLineageHeatmap$Sample_ID
+dfTotalLineageHeatmap <- select(dfTotalLineageHeatmap, `HPAP Donor`:ncol(dfTotalLineageHeatmap))
+
+dfLinHeatmapMetadata <- select(dfTotalLineageHeatmap, Tissue)
+
+dfTotalLineageHeatmap <- select(dfTotalLineageHeatmap, "Eosinophils":ncol(dfTotalLineageHeatmap))
+dfTotalLineageHeatmap <- t(dfTotalLineageHeatmap)
+
+col_fun_LineageHM <- colorRamp2(c(-2, 0, 2), c("blue", "white", "red")) #set maxima at 5th and 95th percentiles
+LinAnn <- HeatmapAnnotation(df = dfLinHeatmapMetadata,
+                  which = "col",
+                  col = LinTissueColors,
+                  annotation_legend_param = list(
+                        title = "Tissue",
+                        at = LinTissueOrder,
+                        labels = LinTissueOrder
+                  ))
+LinHeatmap <- Heatmap(dfTotalLineageHeatmap,
+                      name = "Z-score",
+                      col = col_fun_LineageHM,
+                      show_column_names = FALSE,
+                      top_annotation = LinAnn)
+draw(LinHeatmap, merge_legends = TRUE)
 ```
 
