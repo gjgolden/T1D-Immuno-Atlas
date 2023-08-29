@@ -15,7 +15,8 @@ Install Prerequisite Packages
 ```{r Packages Installation}
 library(ggplot2)
 library(patchwork)
-library(ggpubr)
+library(ComplexHeatmap)
+library(grid)
 ```
 
 Commonly Used Plot Paramaeters
@@ -40,7 +41,7 @@ FigBlank <- dfFigBlank %>%
 ```{r Lineage Heatmap}
 figLineageHeatmap <- readRDS(file = "./outs/rds/LinHeatmap.RDS")
 
-figLineageHeatmap <- as_ggplot(figLineageHeatmap)
+figLineageHeatmap <-grid.grabExpr(draw(figLineageHeatmap, merge_legends = TRUE))
 figLineageHeatmap
 #need to save the heatmap as a grob object for downstream figure creation
 ```
