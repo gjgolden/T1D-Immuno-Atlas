@@ -384,16 +384,16 @@ dfCD8Heatmap <- dfLineageFilter %>%
   mutate(str_replace_all(metric, "CD8 ", "")) %>%
   group_by(metric) %>%
   mutate(z_score = scale(value))  %>%
-  select(1:LN_type, metric, z_score) %>%
+  dplyr::select(1:LN_type, metric, z_score) %>%
   pivot_wider(id_cols = `HPAP Donor`:`LN_type`, names_from = metric, values_from = z_score) %>%
   mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
   relocate(Sample_ID, .before = `HPAP Donor`) %>%
   as.data.frame()
 rownames(dfCD8Heatmap) <- dfCD8Heatmap$Sample_ID
 
-dfCD8HeatmapMetadata <- select(dfCD8Heatmap, Tissue)
+dfCD8HeatmapMetadata <- dplyr::select(dfCD8Heatmap, Tissue)
 
-dfCD8Heatmap <- select(dfCD8Heatmap, "CD8 Tcm":ncol(dfCD8Heatmap))
+dfCD8Heatmap <- dplyr::select(dfCD8Heatmap, "CD8 Tcm":ncol(dfCD8Heatmap))
 dfCD8Heatmap <- t(dfCD8Heatmap)
 
 #Heatmap
@@ -409,6 +409,7 @@ CD8Ann <- HeatmapAnnotation(df = dfCD8HeatmapMetadata,
 CD8Heatmap <- Heatmap(dfCD8Heatmap,
                       name = "Z-score",
                       col = col_fun_CD8HM,
+                      row_names_gp = gpar(fontsize = 6),
                       show_column_names = FALSE,
                       top_annotation = CD8Ann)
 draw(CD8Heatmap, merge_legends = TRUE)
@@ -430,16 +431,16 @@ dfCD4Heatmap <- dfLineageFilter %>%
   mutate(metric = str_replace_all(metric, "CD4 ", "")) %>%
   group_by(metric) %>%
   mutate(z_score = scale(value))  %>%
-  select(1:LN_type, metric, z_score) %>%
+  dplyr::select(1:LN_type, metric, z_score) %>%
   pivot_wider(id_cols = `HPAP Donor`:`LN_type`, names_from = metric, values_from = z_score) %>%
   mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
   relocate(Sample_ID, .before = `HPAP Donor`) %>%
   as.data.frame()
 rownames(dfCD4Heatmap) <- dfCD4Heatmap$Sample_ID
 
-dfCD4HeatmapMetadata <- select(dfCD4Heatmap, Tissue)
+dfCD4HeatmapMetadata <- dplyr::select(dfCD4Heatmap, Tissue)
 
-dfCD4Heatmap <- select(dfCD4Heatmap, "Tcm":ncol(dfCD4Heatmap))
+dfCD4Heatmap <- dplyr::select(dfCD4Heatmap, "Tcm":ncol(dfCD4Heatmap))
 dfCD4Heatmap <- t(dfCD4Heatmap)
 
 #Heatmap
@@ -455,6 +456,7 @@ CD4Ann <- HeatmapAnnotation(df = dfCD4HeatmapMetadata,
 CD4Heatmap <- Heatmap(dfCD4Heatmap,
                       name = "Z-score",
                       col = col_fun_CD4HM,
+                      row_names_gp = gpar(fontsize = 7),
                       show_column_names = FALSE,
                       top_annotation = CD4Ann,
                       cluster_rows = diana,
@@ -708,14 +710,14 @@ TissueSigPopsGraphs <- lapply(TissueSigPops, function(i) {
 ```{r Section 6: Tissue Distribution - Generate PCA-compatible dataframe and metadata for entire dataset}
 #PCA compatible dataframe for the entire dataset
 dfPCA <- dfLineageFilter %>%
-  select(1:Tissue, metric:ncol(dfLineage)) %>%
+   dplyr::select(1:Tissue, metric:ncol(dfLineage)) %>%
   pivot_wider(id_cols = `HPAP Donor`:`Tissue`, names_from = metric, values_from = value) %>%
   mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
   relocate(Sample_ID, .before = `HPAP Donor`) %>%
   as.data.frame()
 rownames(dfPCA) <- dfPCA$Sample_ID
 
-dfPCAMetadata <- select(dfPCA, Tissue, `HPAP Donor`) 
+dfPCAMetadata <-  dplyr::select(dfPCA, Tissue, `HPAP Donor`) 
 dfPCAMetadata$Sample_ID <- rownames(dfPCAMetadata)
 ```
 
@@ -786,9 +788,9 @@ pcaCD4Pops <- pcaCD4Pops[pcaCD4Pops != ""]
 
 #filtering out Alberto's samples
 dfCD4forPCA <- dfPCA %>%
-  filter(Tissue != "Spleen") %>%
+  #filter(Tissue != "Spleen") %>%
   filter(!is.na(`CD4 Tcm CD25+`)) %>%
-  select(pcaCD4Pops)
+  dplyr::select(all_of(pcaCD4Pops))
 
 CD4PCA <- prcomp(dfCD4forPCA, scale. = TRUE)
 
@@ -800,11 +802,14 @@ dfCD4PCA <- CD4PCA$x %>%
 CD4_var_explained <- CD4PCA$sdev^2/sum(CD4PCA$sdev^2)
 
 CD4PCAplot <- dfCD4PCA %>%
-  ggplot(aes(PC4, PC5, color = Tissue)) +
+  mutate(Tissue = str_replace(Tissue, "_", " ")) %>%
+  mutate(Tissue = fct_relevel(Tissue, "Spleen", "SMA mLN", "MES mLN", "Head pLN", "Body pLN", "Tail pLN")) %>%
+  ggplot(aes(PC1, PC2, color = Tissue)) +
   geom_point(size = 4) +
-  geom_text(label = dfCD4PCA$`HPAP Donor`, nudge_y = TRUE) +
-  labs(x=paste0("PC3: ",round(Lin_var_explained[4]*100,1),"%"),
-       y=paste0("PC4: ",round(Lin_var_explained[5]*100,1),"%")) +
+  #geom_text(label = dfCD4PCA$`HPAP Donor`, nudge_y = TRUE) +
+  labs(x=paste0("PC3: ",round(CD4_var_explained[4]*100,1),"%"),
+       y=paste0("PC4: ",round(CD4_var_explained[5]*100,1),"%")) +
+  scale_color_manual(values = LinColorsOnly) +
   theme_classic()
 
 CD4PCAplot
@@ -1000,94 +1005,359 @@ dfDiseaseTissuesSepStats <- tissueColisANOVA(anovapops = TissueSepAnovapops,
 ```
 
 ```{r Section 7: Disease State - Generate heatmap showing significantly changing populations across disease states}
-LNcolor <- list(tissue = c("pLN" = "#0777B6", "mLN" = "#73A942", "Spleen" = "#BC4749"))
+LNcolor <- c("pLN" = "#0777B6", "mLN" = "#73A942", "Spleen" = "#BC4749")
 LNorder <- c("pLN", "mLN", "Spleen")
+pvalColor <- c("ns" = "#dadaeb", "*" = "#b3cde3", "**" = "#8c96c6", "***" = "#88419d")
+pvalOrder <- c("ns", "*", "**", "***")
 
-dfsigPopsNDT1D <- dfDiseasePoolStats %>%
-  filter(ND_T1D < 0.05) %>%
-  arrange(ND_T1D) %>%
+dfNormTissuePop <- dfLineageFilter %>%
+  group_by(metric, LN_type) %>%
+  mutate(z_score = scale(value)) %>%
+  dplyr::select("HPAP Donor":metric,z_score)
+  
+dfsigPopsDisease <- dfDiseasePoolStats %>%
   mutate(immune_pop = str_replace_all(immune_pop, "_", " ")) %>%
   mutate(pvalNDT1D = case_when(ND_T1D < 0.001 ~ "***",
                           ND_T1D >= 0.001 & ND_T1D < 0.01 ~ "**",
-                          ND_T1D >= 0.01 & ND_T1D < 0.05 ~ "*"))
+                          ND_T1D >= 0.01 & ND_T1D < 0.05 ~ "*")) %>%
+  mutate(pvalNDAAb = case_when(ND_AAb < 0.001 ~ "***",
+                          ND_AAb >= 0.001 & ND_AAb < 0.01 ~ "**",
+                          ND_AAb >= 0.01 & ND_AAb < 0.05 ~ "*")) %>%
+  mutate(pvalAAbT1D = case_when(AAb_T1D < 0.001 ~ "***",
+                          AAb_T1D >= 0.001 & AAb_T1D < 0.01 ~ "**",
+                          AAb_T1D >= 0.01 & AAb_T1D < 0.05 ~ "*")) %>%
+  filter(!is.na(pvalNDT1D) | !is.na(pvalNDAAb) | !is.na(pvalAAbT1D)) %>%
+  replace_na(list(pvalNDT1D = "ns", pvalNDAAb = "ns", pvalAAbT1D = "ns"))
 
-dfsigPopsNDT1Dsamples <- dplyr::select(dfsigPopsNDT1D, immune_pop, tissue)
+dfsigPopsSamples <- dfsigPopsDisease %>%
+  dplyr::select(immune_pop, tissue) %>%
+  filter(!grepl("CD127.CD27.", immune_pop)) %>% #for large heatmap, CD27 and CD127 will be separated for viewing ease
+  filter(!grepl("Tregs$", immune_pop)) #for large heatmap, Tregs represented by CD4+ Tem CD25+ (mostly)
 
-dfsigpopsNDT1Dheatmap <- dfHeatmapNorm %>%
-  filter(`Disease Status` != "AAb+") %>%
+dfsigPopsHeatmap <- dfNormTissuePop %>%
   group_by(metric, `Disease Status`, LN_type) %>%
   summarise(zMean = mean(z_score)) %>%
   pivot_wider(names_from = `Disease Status`, values_from = zMean) %>% 
   rename("immune_pop" = "metric") %>%
   rename("tissue" = "LN_type") %>%
-  right_join(dfsigPopsNDT1Dsamples) %>%
+  right_join(dfsigPopsSamples) %>%
   ungroup() %>%
   mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
   relocate(Sample_ID, .before = immune_pop) %>%
-  right_join(dfsigPopsNDT1D) %>%
-  relocate(pval, .before = ND) %>%
-  dplyr::select(Sample_ID:T1D) %>%
+  left_join(dfsigPopsDisease) %>%
+  relocate(pvalNDT1D:pvalAAbT1D, .before = ND_T1D) %>%
   as.data.frame()
 
-rownames(dfsigpopsNDT1Dheatmap) <- dfsigpopsNDT1Dheatmap$Sample_ID
-dfsigpopsNDT1Dheatmap <- dplyr::select(dfsigpopsNDT1Dheatmap, immune_pop:ncol(dfsigpopsNDT1Dheatmap))
-immune_pops_names_NDT1D <- structure(dfsigpopsNDT1Dheatmap$immune_pop, names = rownames(dfsigpopsNDT1Dmetadata))
+rownames(dfsigPopsHeatmap) <- dfsigPopsHeatmap$Sample_ID
+dfsigPopsHeatmap <- dplyr::select(dfsigPopsHeatmap, immune_pop:ncol(dfsigPopsHeatmap))
+immune_pops_names <- structure(dfsigPopsHeatmap$immune_pop, names = rownames(dfsigPopsHeatmap))
 
-dfsigpopsNDT1Dmetadata <- dplyr::select(dfsigpopsNDT1Dheatmap, tissue)
-
-dfsigpopsNDT1DheatmapPlot <- dplyr::select(dfsigpopsNDT1Dheatmap, `ND`:ncol(dfsigpopsNDT1Dheatmap)) %>%
+dfsigPopsHeatmapPlot <- dfsigPopsHeatmap %>%
+  dplyr::select(`AAb+`:T1D) %>%
   as.matrix()
 
-col_fun_NDT1Dhm <- colorRamp2(c(-0.75, 0, 0.75), c("blue", "white", "red")) 
-NDT1DAnn <- HeatmapAnnotation(df = dfsigpopsNDT1Dmetadata,
+col_fun_DiseaseHm <- colorRamp2(c(-0.75, 0, 0.75), c("blue", "white", "red")) 
+DiseaseAnn <- HeatmapAnnotation(`LNs` = dfsigPopsHeatmap$tissue,
+                              `NDAAb` = dfsigPopsHeatmap$pvalNDAAb,
+                              `AAbT1D` = dfsigPopsHeatmap$pvalAAbT1D,
+                              `NDT1D` = dfsigPopsHeatmap$pvalNDT1D,
                               which = "row",
-                              col = LNcolor,
-                              show_annotation_name = FALSE,
+                              col = list(`LNs` = LNcolor, `NDT1D` = pvalColor, 
+                                         `NDAAb` = pvalColor, `AAbT1D` = pvalColor),
+                              show_annotation_name = TRUE,
+                              annotation_label = c(`LNs` = "Tissue", `NDAAb` = "ND v AAb+", 
+                                                   `AAbT1D` = "AAb+ v T1D", `NDT1D` = "ND v T1D"),
+                              annotation_name_side = "top",
+                              annotation_name_rot = 45,
+                              annotation_name_offset = unit(0.05, "in"),
                               annotation_name_gp = gpar(fontsize = 8),
+                              gap = unit(c(0.1, 0, 0), "in"),
+                              show_legend = c(`LNs` = TRUE, `NDAAb` = TRUE,
+                                              `AAbT1D` = FALSE, `NDT1D` = FALSE),
                               annotation_legend_param = list(
-                                title = "Tissue",
-                                at = LNorder,
-                                labels = LNorder,
-                                ann_height = unit(0.6, "in"),
-                                grid_width = unit(0.1, "in"),
-                                labels_gp = gpar(fontsize = 4),
-                                title_gp = gpar(fontsize = 6)
+                                `LNs` = list(title = "Tissue",
+                                  at = LNorder,
+                                  labels = LNorder,
+                                  title_position = "topcenter",
+                                  grid_width = unit(0.1, "in"),
+                                  grid_height = unit(0.1, "in"),
+                                  labels_gp = gpar(fontsize = 4),
+                                  title_gp = gpar(fontsize = 6)),
+                                `NDAAb` = list(title = "P-value",
+                                  at = pvalOrder,
+                                  labels = pvalOrder,
+                                  ncol = 2,
+                                  title_position = "topcenter",
+                                  grid_width = unit(0.1, "in"),
+                                  grid_height = unit(0.1, "in"),
+                                  labels_gp = gpar(fontsize = 4),
+                                  title_gp = gpar(fontsize = 6)) 
                               ))
-set.seed(10)
+                          
+set.seed(9)
 
-NDT1Dheatmap <- Heatmap(dfsigpopsNDT1DheatmapPlot,
-                      name = "  Mean \n Z-score",
-                      col = col_fun_NDT1Dhm,
-                      cell_fun = function(j, i , x, y, width, height, fill) {
-                        if (j %% 2 == 0) {
-                          grid.text(label = dfsigpopsNDT1Dheatmap[i,3], 
-                                    x, y,
-                                    gp = gpar(fontsize = 6))
-                        }
-                      },
-                      column_order = c("ND", "T1D"),
+DiseaseHeatmap <- Heatmap(dfsigPopsHeatmapPlot,
+                      name = "Mean Z-score",
+                      col = col_fun_DiseaseHm,
+                      column_order = c("ND", "AAb+", "T1D"),
                       show_column_names = TRUE,
                       column_names_side = "top",
-                      column_names_rot = 45,
-                      right_annotation = NDT1DAnn,
-                      row_title = NULL,
-                      row_km = 2,
-                      row_labels = immune_pops_metadata_NDT1D,
-                      row_names_gp = gpar(fontsize = 6),
-                      row_dend_width = unit(0.1, "in"),
+                      column_names_rot = 0,
+                      column_names_centered = TRUE,
+                      column_names_gp = gpar(fontsize = 8, fontface = "bold"),
+                      row_km = 3,
+                      row_gap = unit(0.1, "in"),
+                      right_annotation = DiseaseAnn,
+                      row_title_gp = gpar(fontsize = 10),
+                      row_title_rot = 0,
+                      row_labels = immune_pops_names,
+                      row_names_gp = gpar(fontsize = 5),
+                      row_dend_width = unit(0.3, "in"),
                       heatmap_legend_param = list(
-                        legend_height = unit(0.6, "in"),
-                        grid_width = unit(0.1, "in"),
+                        legend_direction = "horizontal",
+                        legend_width = unit(0.6, "in"),
+                        title_position = "topcenter",
+                        grid_height = unit(0.1, "in"),
                         labels_gp = gpar(fontsize = 4),
                         title_gp = gpar(fontsize = 6)
                       ))
-draw(NDT1Dheatmap, merge_legends = TRUE)
+draw(DiseaseHeatmap, merge_legends = TRUE, heatmap_legend_side = "bottom")
+saveRDS(DiseaseHeatmap, file = "./outs/rds/DiseaseHeatmap.RDS")
+```
+
+```{r Section 7: Disease State - CD25+ and CD38+ frequency across all T cell subsets}
+#the previous section demonstrated that CD25 changed across disease state in many T cell subsets.
+#this will be explored further within this section
+diseaseColors <- c("ND" = "#949494", "AAb+" = "#2E96FF", "T1D" = "#FF8B3D")
+
+dfDiseaseScales <- dfLineageFilter %>%
+  group_by(metric, LN_type) %>%
+  mutate(z_score = scale(value)) %>%
+  ungroup() %>%
+  filter(!grepl("^CD. Mem CD.*$", metric)) %>%
+  filter(!grepl("^CD. Mem .*\\+$", metric)) %>%
+  filter(grepl("CD. ", metric)) %>%
+  mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
+  mutate(LN_type = as_factor(LN_type)) %>%
+  mutate(`LN_type` = fct_relevel(`LN_type`, "pLN", "mLN", "Spleen")) %>%
+  mutate(cd = case_when(str_detect(metric, "CD4") ~ "CD4",
+                        str_detect(metric, "CD8") ~ "CD8")) %>%
+  mutate(tpop = case_when(str_detect(metric, "Tn ") ~ "Tn",
+                        str_detect(metric, "Tnl") ~ "Tnl",
+                        str_detect(metric, "Tcm") ~ "Tcm",
+                        str_detect(metric, "Tem ") ~ "Tem",
+                        str_detect(metric, "Temra") ~ "Temra",
+                        str_detect(metric, "Tn$") ~ "Tn",
+                        str_detect(metric, "Tem$") ~ "Tem",
+                        str_detect(metric, "CD4 Mem") ~ "Mem")) %>%
+  mutate(tpop = as_factor(tpop)) %>%
+  mutate(tpop = fct_relevel(tpop, "Tn", "Tnl", "Tcm", "Tem", "Temra")) %>%
+  group_by(metric, LN_type, `Disease Status`) %>%
+  mutate(mean_z = mean(z_score)) %>%
+  mutate(mean = mean(value))
+
+CD25_disease_line_Zscore <- dfDiseaseScales %>%
+    filter(grepl("CD25+", metric)) %>%
+    filter(LN_type == "mLN") %>%
+    ggplot(aes(`Disease Status`, mean_z, color = tpop, group = tpop)) +
+    geom_point() +
+    geom_line() +
+    theme_classic() +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.title.y = element_text(size = 8),
+          legend.key.size = unit(0.1, 'in'), #change legend key size
+          legend.key.height = unit(0.1, 'in'), #change legend key height
+          legend.key.width = unit(0.1, 'in'), #change legend key width
+          legend.title = element_text(size=8), #change legend title font size
+          legend.text = element_text(size=6)) + #change legend text font size
+    facet_wrap(vars(cd, LN_type)) +
+    theme(strip.text.x = element_blank())
+CD25_disease_line_Zscore
+ggsave(filename = "CD25_disease_line_Zscore.pdf",
+       plot = CD25_disease_line_Zscore,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 3,
+       height = 1.5,
+       units = "in")
+
+CD25_disease_line_NonNorm <- dfDiseaseScales %>%
+    filter(grepl("CD25+", metric)) %>%
+    filter(LN_type == "pLN") %>%
+    ggplot(aes(`Disease Status`, mean, color = tpop, group = tpop)) +
+    geom_point() +
+    geom_line() +
+    theme_classic() +theme(axis.title.x = element_blank(),
+          axis.text.x = element_text(angle = 45, hjust = 1),
+          axis.title.y = element_text(size = 8),
+          legend.key.size = unit(0.1, 'in'), #change legend key size
+          legend.key.height = unit(0.1, 'in'), #change legend key height
+          legend.key.width = unit(0.1, 'in'), #change legend key width
+          legend.title = element_text(size=8), #change legend title font size
+          legend.text = element_text(size=6)) + #change legend text font size
+    facet_wrap(vars(cd), scales = "free_y") +
+    theme(strip.text.x = element_blank())
+CD25_disease_line_NonNorm
+ggsave(filename = "CD25_disease_line_NonNorm.pdf",
+       plot = CD25_disease_line_NonNorm,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 3,
+       height = 1.5,
+       units = "in")
+
+CD38_disease_line_Zscore <- dfDiseaseScales %>%
+    filter(grepl("CD38+", metric)) %>%
+    filter(!grepl("HLA-DR+", metric)) %>%
+    filter(LN_type == "pLN") %>%
+    ggplot(aes(`Disease Status`, mean_z, color = tpop, group = tpop)) +
+    geom_point() +
+    geom_line() +
+    theme_classic() +
+    theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title.y = element_text(size = 8),
+        legend.key.size = unit(0.1, 'in'), #change legend key size
+        legend.key.height = unit(0.1, 'in'), #change legend key height
+        legend.key.width = unit(0.1, 'in'), #change legend key width
+        legend.title = element_text(size=8), #change legend title font size
+        legend.text = element_text(size=6)) + #change legend text font size
+    facet_wrap(vars(cd, LN_type)) +
+    theme(strip.text.x = element_blank())
+CD38_disease_line_Zscore
+ggsave(filename = "CD38_disease_line_Zscore.pdf",
+       plot = CD38_disease_line_Zscore,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 3,
+       height = 1.5,
+       units = "in")
+
+CD38_disease_line_NonNorm <- dfDiseaseScales %>%
+    filter(grepl("CD38+", metric)) %>%
+    filter(!grepl("HLA-DR+", metric)) %>%
+    filter(LN_type == "pLN") %>%
+    ggplot(aes(`Disease Status`, mean, color = tpop, group = tpop)) +
+    geom_point() +
+    geom_line() +
+    theme_classic() +theme(axis.title.x = element_blank(),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      axis.title.y = element_text(size = 8),
+      legend.key.size = unit(0.1, 'in'), #change legend key size
+      legend.key.height = unit(0.1, 'in'), #change legend key height
+      legend.key.width = unit(0.1, 'in'), #change legend key width
+      legend.title = element_text(size=8), #change legend title font size
+      legend.text = element_text(size=6)) + #change legend text font size
+    facet_wrap(vars(cd)) +
+    theme(strip.text.x = element_blank())
+CD38_disease_line_NonNorm
+ggsave(filename = "CD38_disease_line_NonNorm.pdf",
+       plot = CD38_disease_line_NonNorm,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 3,
+       height = 1.5,
+       units = "in")
+
+CD25_CD38_boxplot_settings <- list(geom_boxplot(width = 0.8,
+               outlier.shape = NA,
+               show.legend = FALSE),
+               geom_point(
+                  size = 1,
+                  stroke = 0.2,
+                  alpha = 0.4,
+                  show.legend = FALSE,
+                  position = position_jitterdodge(jitter.width = 1, 
+                                                  dodge.width = 0.8)),
+               ylab("% of parent"),
+               scale_color_manual(values = diseaseColors),
+               theme_classic(),
+               theme(
+                 axis.title.x = element_blank(),
+                 axis.text.x = element_text(angle = 45, hjust = 1),
+                 axis.title.y = element_text(size = 8)
+              ))
+
+CD25_boxplots_CD4 <- dfDiseaseScales %>%
+  filter(grepl("CD25+", metric)) %>%
+  filter(LN_type != "Spleen") %>%
+  filter(cd == "CD4") %>%
+  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
+    CD25_CD38_boxplot_settings +
+    facet_grid(cols = vars(tpop), switch = "y") +
+    theme(strip.text.x = element_blank())
+CD25_boxplots_CD4
+ggsave(filename = "CD25_boxplots_CD4.pdf",
+       plot = CD25_boxplots_CD4,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 4,
+       height = 1.5,
+       units = "in")
+
+CD25_boxplots_CD8 <- dfDiseaseScales %>%
+  filter(grepl("CD25+", metric)) %>%
+  filter(LN_type != "Spleen") %>%
+  filter(cd == "CD8") %>%
+  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
+    CD25_CD38_boxplot_settings +
+    facet_grid(cols = vars(tpop), switch = "y") +
+    theme(strip.text.x = element_blank())
+CD25_boxplots_CD8
+ggsave(filename = "CD25_boxplots_CD8.pdf",
+       plot = CD25_boxplots_CD8,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 4,
+       height = 1.5,
+       units = "in")
+
+CD38_boxplots_CD4 <- dfDiseaseScales %>%
+  filter(grepl("CD38+", metric)) %>%
+  filter(!grepl("HLA-DR+", metric)) %>%
+  filter(LN_type != "Spleen") %>%
+  filter(cd == "CD4") %>%
+  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
+    CD25_CD38_boxplot_settings +
+    facet_grid(cols = vars(tpop), switch = "y") +
+    theme(strip.text.x = element_blank())
+CD38_boxplots_CD4
+ggsave(filename = "CD38_boxplots_CD4.pdf",
+       plot = CD38_boxplots_CD4,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 4,
+       height = 1.5,
+       units = "in")
+
+CD38_boxplots_CD8 <- dfDiseaseScales %>%
+  filter(grepl("CD38+", metric)) %>%
+  filter(!grepl("HLA-DR+", metric)) %>%
+  filter(LN_type != "Spleen") %>%
+  filter(cd == "CD8") %>%
+  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
+    CD25_CD38_boxplot_settings +
+    facet_grid(cols = vars(tpop), switch = "y") +
+    theme(strip.text.x = element_blank())
+CD38_boxplots_CD8
+ggsave(filename = "CD38_boxplots_CD8.pdf",
+       plot = CD38_boxplots_CD8,
+       device = "pdf",
+       path = "./outs/pdf/",
+       width = 4,
+       height = 1.5,
+       units = "in")
+
 
 ```
 
+
 ```{r}
+diseaseColors <- c("#949494", "#2E96FF", "#FF8B3D")
+
 testplot <- dfLineageFilter %>%
-    filter(metric == "CD4 Tem CD127-CD27+") %>%
+    filter(metric == "CD8 Tcm CD25+") %>%
     filter(LN_type == "pLN") %>%
     mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
     ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
@@ -1095,12 +1365,12 @@ testplot <- dfLineageFilter %>%
                outlier.shape = NA,
                show.legend = FALSE) +
     geom_point(
-    size = 1,
-    stroke = 0.2,
-    alpha = 0.4,
-    show.legend = FALSE,
-    position = position_jitterdodge(jitter.width = 1, 
-                                    dodge.width = 0.8)) +
+      size = 1,
+      stroke = 0.2,
+      alpha = 0.4,
+      show.legend = FALSE,
+      position = position_jitterdodge(jitter.width = 1, 
+                                      dodge.width = 0.8)) +
     ylab("% of parent") +
     scale_color_manual(values = diseaseColors) +
     theme_classic() +
