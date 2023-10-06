@@ -16,20 +16,21 @@ Section 1: Install Requisite Packages
 library(dplyr)
 library(stringr)
 library(tidyr)
-library(ggplot2)
-library(rstatix)
 library(forcats)
-library(ComplexHeatmap)
+library(ggplot2)
+library(rstatix) #dplyr-compatible stats package
+library(ComplexHeatmap) #heatmap generation
 library(circlize) #part of ComplexHeatmap requirements
-library(ggrepel)
-library(cluster)
+library(ggrepel) #label annotations
+library(cluster) #required for heatmap generation
 library(GGally) #making pairwise plots
 library(broom) #prints stats test outcomes as data frames
-library(ggpubr)
+library(ggpubr) #adds p-values annotations to ggplots
 library(gt) #exporting nice looking tables
 library(webshot2) #exporting nice looking tables
 library(WRS2) #contains robust statistical tests
 library(multcomp) #allows for multiple comparisons within ANCOVA
+library(ggridges) #for ggplot compatible ridge plots
 ```
 
 
@@ -187,54 +188,10 @@ dfFresh <- dfFresh %>%
 ```
 
 
-Section 4: Create commonly used parameters for plot creation
-```{r Section 4: Common Plot Parameters}
-#shared graph element list for grey/blue/orange ND/AAb/T1D
-theme_list <- list(theme_classic(),
-        theme(axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 14, vjust = 1),
-        axis.text.x = element_text(size = 12, color = "black"),
-        axis.text.y = element_text(size = 12, color = "black")),
-        scale_shape_manual(values = c(22, 21, 23, 24)),
-        scale_fill_manual(values = c("#949494", "#2E96FF", "#FF8B3D", "purple")),
-        geom_point(size = 2.7, show.legend = FALSE, stroke = 0.5, 
-                   color = "grey40",position = position_jitterdodge(
-                     jitter.width = 1.2, dodge.width = 0.5)),
-        stat_summary(geom = "errorbar",
-               fun.min = function(z) {quantile(z, 0.25)},
-               fun.max = function(z) {quantile(z, 0.75)},
-               width = 0.2,
-               size = 1,
-               color = "grey20"),
-        stat_summary(fun = median,
-               geom = "crossbar",
-               width = 0.3,
-               size = 0.5,
-               show.legend = FALSE,
-               color = "grey20"))
-
-#shared graph list for stacked bar charts
-theme_stacked_chart_list <- list(geom_bar(stat = "identity", position = "dodge"), 
-  scale_fill_brewer(),
-  scale_y_continuous(limits = c(0,15),
-                     expand = c(0,0),
-                     minor_breaks = seq(0, 15 , 1)),
-  ylab("Number of Donors"),
-  geom_text(size = 3.5,
-            position = position_dodge(width = 0.9),
-            vjust = 1.25),
-  theme_classic(),
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 14, vjust = 1),
-        axis.text.x = element_text(size = 12, color = "black"),
-        axis.text.y = element_text(size = 12, color = "black")))
-```
-
-
-Section 5: Compare immune population frequencies between different scientists
-```{r Section 5: Scientist Comparisons}
+Section 4: Compare immune population frequencies between different scientists
+```{r Section 4: Scientist Comparisons}
 dfScientistStat <- dfFresh %>%
-  filter(Staining_Flow_Researcher == "Greg" | Staining_Flow_Researcher == "Alberto") %>%
+  filter(Staining_Flow_Researcher == "D" | Staining_Flow_Researcher == "A") %>% #these researchers did the vast majority of the data acquisition, and are the only ones considered for this comparison
   filter(LN_type == "pLN") %>%
   filter(`Disease Status` == "ND") %>%
   filter(!str_detect(metric, "Tn CD127.CD27.")) %>% #all filtered values are 0, stats test would fail
@@ -243,33 +200,52 @@ dfScientistStat <- dfFresh %>%
   group_by(metric) %>%
   wilcox_test(value ~ Staining_Flow_Researcher) %>%
   adjust_pvalue() %>%
-  filter(p.adj < 0.05)
+  filter(p.adj < 0.05) %>%
+  mutate(pvalSymbol = case_when(p.adj < 0.001 ~ "***",
+                          p.adj >= 0.001 & p.adj < 0.01 ~ "**",
+                          p.adj >= 0.01 & p.adj < 0.05 ~ "*")) %>%
+  arrange(p.adj)
 
 ScientistComp <- dfFresh %>%
+  filter(Staining_Flow_Researcher != "C") %>%
   filter(metric %in% dfScientistStat$metric) %>%
   filter(`Disease Status` == "ND") %>%
+  mutate(metric = fct_relevel(`metric`, dfScientistStat$metric)) %>%
   ggplot(aes(Staining_Flow_Researcher, value, color = Staining_Flow_Researcher)) +
-  geom_jitter(size = 1) +
+  geom_boxplot(outlier.size = 0.3) +
+  stat_pvalue_manual(data = dfScientistStat, label = "pvalSymbol", 
+                     y.position = 105, xmin = "group1", xmax = "group2",
+                     tip.length = 0, label.size = 2) +
+  ylab("% of Parent") +
+  guides(color = guide_legend(title = "Researcher")) +
   theme_classic() +
-  facet_wrap(~metric, scales = "free_y")
-
-#ScientistComp
+  scale_color_brewer(palette = "Dark2") +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.length = unit(0, "in"),
+  ) +
+  facet_wrap(~factor(metric), nrow = 1, strip.position = "bottom") +
+  theme(strip.text.x.bottom = element_text(angle = 90, hjust = 1, size = 6),
+        strip.background = element_blank(),
+        strip.placement = "outside")
+saveRDS(ScientistComp, file = "./outs/rds/ScientistComparison.RDS")
 
 #Results show that there are several parameters that differ between researchers, mainly in PD1, HLA-DR, and CD25 on certain CD4+ T cells. This could be due to differential flow cytometery parameter settings on the cytometer (antibody titrations or conjugations did not change between researchers). 
-#Populations that were significantly different between researchers were filtered (see below), keeping the researcher's results (Greg) who analyzed the data and compiled it for the manuscript.
+#Populations that were significantly different between researchers were filtered (see below), keeping the researcher's results (Researcher D) who analyzed the data and compiled it for the manuscript.
 
 ScientistFilter <- c("CD4 Mem PD1+", "CD4 Tcm PD1+", "CD4 Tem PD1+", "CD4 Temra PD1+", "CD4 Tn PD1+", "CD4 Tnl PD1+", "CD4 Tem HLA-DR+", "CD4 Temra HLA-DR+", "CD4 Tcm HLA-DR+", "CD8 Temra HLA-DR+", "CD4 Tem HLA-DR+ CD38+", "CD4 Temra HLA-DR+ CD38+", "CD4 Tcm HLA-DR+ CD38+", "CD8 Temra HLA-DR+ CD38+", "CD4 Tcm CD25+", "CD4 Tnl CD25+")
 
 dfScientistFilter <- dfFresh %>%
-  filter(Staining_Flow_Researcher == "Alberto") %>%
+  filter(Staining_Flow_Researcher == "A") %>%
   filter(metric %in% ScientistFilter)
 
 dfLineage <- anti_join(dfFresh, dfScientistFilter)
 ```
 
 
-Section 6: Tissue Distribution of Immune Populations
-```{r Section 6: Tissue Distribution - Commonly used lineage parameters, total lineage df for ggplot}
+Section 5: Tissue Distribution of Immune Populations
+```{r Section 5: Tissue Distribution - Commonly used lineage parameters, total lineage df for ggplot}
 LineageList <- c("Eosinophils", "Neutrophils", "B cells","ILCs", "Imm. Granulocytes", "HSCs", "DCs", "Monocytes", "NK cells", "T cells", "CD8+ T cells", "CD8 Tcm", "CD8 Tem", "CD8 Temra", "CD8 Tn", "CD8 Tnl", "CD4+ T cells", "CD4 Tcm", "CD4 Tem", "CD4 Temra", "CD4 Tn", "CD4 Tnl", "CD4 Mem Tregs", "CD4 Mem gcTfh", "CD4 Mem mTfh")
 LinTissueColors <- list(`Tissue` = c("Whole_Blood" = "red", "Spleen" =  "#BC4749","SMA_mLN" = "#228B22", "MES_mLN" = "#73A942", "Head_pLN" = "#023E8A", "Body_pLN" = "#0777B6", "Tail_pLN" = "#00B4D8"))
 LinColorsOnly <- c("#BC4749", "#228B22", "#73A942", "#023E8A", "#0777B6", "#00B4D8")
@@ -287,7 +263,7 @@ dfLineageFilter <- dfLineage %>%
 dfTotalLineageFreq <- filter(dfLineageFilter, metric %in% LineageList)
 ```
 
-```{r Section 6: Tissue Distribution - Violin plotting all flow cytometry gates across all tissues}
+```{r Section 5: Tissue Distribution - Violin plotting all flow cytometry gates across all tissues}
 #violin plotting all flow cytometry gates across all HPAP tissues
 TissuePheno_AllGates <- dfLineage %>%
   mutate(Tissue = fct_relevel(Tissue, "Whole_Blood", "PBMC","Spleen", "SMA_mLN", "MES_mLN", "Head_pLN", "Body_pLN", "Tail_pLN", "Islet_Sup")) %>%
@@ -300,7 +276,7 @@ TissuePheno_AllGates <- dfLineage %>%
 TissuePheno_AllGates
 ```
 
-```{r Section 6: Tissue Distribution - Heatmap of major immune population frequency across tissues}
+```{r Section 5: Tissue Distribution - Heatmap of major immune population frequency across tissues}
 LinTissueColorsHeatmap <- list(`Tissue` = c("Spleen" = "#BC4749","SMA mLN" = "#228B22", "MES mLN" = "#73A942", "Head pLN" = "#023E8A", "Body pLN" = "#0777B6", "Tail pLN" = "#00B4D8"))
 
 #generate a df that is compatible with heatmap generation
@@ -334,19 +310,19 @@ LinAnn <- HeatmapAnnotation(df = dfLinHeatmapMetadata,
                   which = "col",
                   col = LinTissueColorsHeatmap,
                   simple_anno_size = unit(0.1, "in"),
-                  height = unit(0.2, "in"),
+                  height = unit(0.1, "in"),
                   annotation_name_gp = gpar(fontsize = 8),
                   annotation_legend_param = list(
                         title = "Tissue",
                         at = LinTissueOrder,
                         labels = LinTissueOrder,
-                        ann_height = unit(0.6, "in"),
+                        legend_height = unit(0.5, "in"),
                         grid_width = unit(0.1, "in"),
                         labels_gp = gpar(fontsize = 4),
                         title_gp = gpar(fontsize = 6)
                   ))
 
-set.seed(1337)
+set.seed(42)
 
 LinHeatmap <- Heatmap(dfTotalLineageHeatmap,
                       name = "Z-score",
@@ -355,21 +331,22 @@ LinHeatmap <- Heatmap(dfTotalLineageHeatmap,
                       top_annotation = LinAnn,
                       cluster_columns = diana,
                       row_km = 3,
-                      row_title = NULL,
-                      row_names_gp = gpar(fontsize = 6),
+                      row_title_gp = gpar(fontsize = 10),
+                      row_title_rot = 0,
+                      row_names_gp = gpar(fontsize = 4),
                       row_dend_width = unit(0.1, "in"),
                       column_dend_height = unit(0.2, "in"),
                       heatmap_legend_param = list(
-                        legend_height = unit(0.6, "in"),
+                        legend_height = unit(0.5, "in"),
                         grid_width = unit(0.1, "in"),
                         labels_gp = gpar(fontsize = 4),
                         title_gp = gpar(fontsize = 6)
                       ))
-draw(LinHeatmap, merge_legends = TRUE)
-#saveRDS(LinHeatmap, file = "./outs/rds/LinHeatmap.RDS")
+#draw(LinHeatmap, merge_legends = TRUE)
+saveRDS(LinHeatmap, file = "./outs/rds/LinHeatmap.RDS")
 ```
 
-```{r Section 6: Tissue Distribution - Heatmap of CD8 T cell population frequency across tissues}
+```{r Section 5: Tissue Distribution - Heatmap of CD8 T cell population frequency across tissues}
 #generate heatmap dataframe
 LinTissueOrder <- c("Spleen", "Head_pLN", "Body_pLN", "Tail_pLN", "SMA_mLN", "MES_mLN")
 
@@ -415,12 +392,12 @@ CD8Heatmap <- Heatmap(dfCD8Heatmap,
 draw(CD8Heatmap, merge_legends = TRUE)
 ```
 
-```{r Section 6: Tissue Distribution - Heatmap of CD4 T cell population frequency across tissues}
+```{r Section 5: Tissue Distribution - Heatmap of CD4 T cell population frequency across tissues}
 #generate heatmap dataframe
 LinTissueOrder <- c("Spleen", "Head_pLN", "Body_pLN", "Tail_pLN", "SMA_mLN", "MES_mLN")
 
 dfCD4Heatmap <- dfLineageFilter %>%
-  filter(Staining_Flow_Researcher != "Alberto") %>% #differences in flow researcher was significant for many pops in CD4, this researcher had to be filtered out to avoid too many NA values
+  filter(Staining_Flow_Researcher != "A") %>% #differences in flow researcher was significant for many pops in CD4, this researcher had to be filtered out to avoid too many NA values
   filter(!grepl("CD127.CD27.", metric)) %>%
   filter(!grepl("Tn CD27.", metric)) %>%
   filter(!grepl("Tn CD127.", metric)) %>%
@@ -464,7 +441,7 @@ CD4Heatmap <- Heatmap(dfCD4Heatmap,
 draw(CD4Heatmap, merge_legends = TRUE)
 ```
 
-```{r Section 6: Tissue Distribution - Heatmap of B cell population frequency across tissues}
+```{r Section 5: Tissue Distribution - Heatmap of B cell population frequency across tissues}
 LinTissueOrder <- c("Spleen", "Head_pLN", "Body_pLN", "Tail_pLN", "SMA_mLN", "MES_mLN")
 
 dfBHeatmap <- dfLineageFilter %>%
@@ -505,7 +482,7 @@ BHeatmap <- Heatmap(dfBHeatmap,
 draw(BHeatmap, merge_legends = TRUE)
 ```
 
-```{r Section 6: Tissue Distribution - Statistics of lineage immune populations across tissues}
+```{r Section 5: Tissue Distribution - Statistics of lineage immune populations across tissues}
 #create a statistics-friendly df to test significance differences of lineage immune populations across tissues
 dfTotalLineageFreqStats <- dfTotalLineageFreq %>%
   pivot_wider(names_from = metric, values_from = value)
@@ -514,18 +491,16 @@ colnames(dfTotalLineageFreqStats) <- gsub(" ", "_", colnames(dfTotalLineageFreqS
 
 #use Dunn's test on every major lineage cell population to look for statistical differences between tissues
 colnameTissue <- names(dfTotalLineageFreqStats)[3] #the Tissue column name
-LineageListStats <- dfTotalLineageFreqStats[14:ncol(dfTotalLineageFreqStats)] %>%
+LineageListStats <- dfTotalLineageFreqStats[13:ncol(dfTotalLineageFreqStats)] %>%
   colnames()
-  
 
 LineageFreqStats <- lapply(LineageListStats, function(x) {
   rstatix::dunn_test(dfTotalLineageFreqStats, reformulate(colnameTissue, x))
 })
-
 dfLineageFreqStats <- bind_rows(LineageFreqStats)
 ```
 
-```{r Section 6: Tissue Distribution - Frequency of lineage cell populations by tissue site}
+```{r Section 5: Tissue Distribution - Frequency of lineage cell populations by tissue site}
 TotalLineageFreq <- dfTotalLineageFreq %>%
   mutate(Tissue = fct_relevel(Tissue, "Spleen", "SMA_mLN", "MES_mLN", "Head_pLN", "Body_pLN", "Tail_pLN")) %>%
   ggplot(aes(Tissue, value)) +
@@ -544,7 +519,7 @@ TotalLineageFreq <- dfTotalLineageFreq %>%
 TotalLineageFreq
 ```
 
-```{r Section 6: Tissue Distribution - Plotting B, T, NK cells, ILCs, CD8 Tcm, CD8 Tn across tissues}
+```{r Section 5: Tissue Distribution - Plotting B, T, NK cells, ILCs, CD8 Tcm, CD8 Tn across tissues}
 #these populations were selected based upon similarity across subsets (B cells), differences between spleen and all LNs (T cells, CD8 Tn), and subtle differences among LNs (NK cells, ILCs, and CD8 Tcm)
 LinPops <- c("B cells", "T cells", "NK cells", "ILCs", "CD8 Tcm", "CD8 Tn")
 
@@ -577,7 +552,7 @@ LinPopsGraphs <- lapply(LinPops, function(l) {
 })
 ```
 
-```{r Section 6: Tissue Distribution - Generate df's for B cell, CD4+ T cell, CD8+ T cell, and NK cells}
+```{r Section 5: Tissue Distribution - Generate df's for B cell, CD4+ T cell, CD8+ T cell, and NK cells}
 #B cell df
 dfBcellPopsFreq <- dfLineageFilter %>%
   filter(grepl("^B cells", metric)) %>%
@@ -586,12 +561,12 @@ dfBcellPopsFreq <- dfLineageFilter %>%
 #B cell stats df
 dfBcellPopsStats <- dfBcellPopsFreq %>%
   pivot_wider(names_from = metric, values_from = value)
-colnames(dfBcellPopsStats) <- gsub("\\+", "pos", colnames(dfBcellPopsStats))
-colnames(dfBcellPopsStats) <- gsub(" ", "_", colnames(dfBcellPopsStats))
-colnames(dfBcellPopsStats) <- gsub("\\-", "neg", colnames(dfBcellPopsStats))
+  colnames(dfBcellPopsStats) <- gsub("\\+", "pos", colnames(dfBcellPopsStats))
+  colnames(dfBcellPopsStats) <- gsub(" ", "_", colnames(dfBcellPopsStats))
+  colnames(dfBcellPopsStats) <- gsub("\\-", "neg", colnames(dfBcellPopsStats))
 
 BcellListStats <- dfBcellPopsStats %>%
-  select(B_cells_CD11cpos:ncol(dfBcellPopsStats)) %>%
+  dplyr::select(B_cells_CD11cpos:ncol(dfBcellPopsStats)) %>%
   colnames()
 
 BcellFreqStats <- lapply(BcellListStats, function(x) {
@@ -618,7 +593,7 @@ colnames(dfCD4TcellPopsStats) <- gsub(" ", "_", colnames(dfCD4TcellPopsStats))
 colnames(dfCD4TcellPopsStats) <- gsub("\\-", "neg", colnames(dfCD4TcellPopsStats))
 
 CD4TcellListStats <- dfCD4TcellPopsStats %>%
-  select(CD4_Mem_gcTfh:ncol(dfCD4TcellPopsStats)) %>%
+  dplyr::select(CD4_Mem_gcTfh:ncol(dfCD4TcellPopsStats)) %>%
   colnames()
 
 CD4TcellFreqStats <- lapply(CD4TcellListStats, function(x) {
@@ -644,7 +619,7 @@ colnames(dfCD8TcellPopsStats) <- gsub(" ", "_", colnames(dfCD8TcellPopsStats))
 colnames(dfCD8TcellPopsStats) <- gsub("\\-", "neg", colnames(dfCD8TcellPopsStats))
 
 CD8TcellListStats <- dfCD8TcellPopsStats %>%
-  select(CD8_Mem_CD127negCD27neg:ncol(dfCD8TcellPopsStats)) %>%
+  dplyr::select(CD8_Mem_CD127negCD27neg:ncol(dfCD8TcellPopsStats)) %>%
   colnames()
 
 CD8TcellFreqStats <- lapply(CD8TcellListStats, function(x) {
@@ -665,7 +640,7 @@ colnames(dfNKcellPopsStats) <- gsub(" ", "_", colnames(dfNKcellPopsStats))
 colnames(dfNKcellPopsStats) <- gsub("\\-", "neg", colnames(dfNKcellPopsStats))
 
 NKcellListStats <- dfNKcellPopsStats %>%
-  select(NK_CD56briCD16neg:ncol(dfNKcellPopsStats)) %>%
+  dplyr::select(NK_CD56briCD16neg:ncol(dfNKcellPopsStats)) %>%
   colnames()
 
 NKcellFreqStats <- lapply(NKcellListStats, function(x) {
@@ -675,7 +650,7 @@ NKcellFreqStats <- lapply(NKcellListStats, function(x) {
 dfNKcellFreqStats <- bind_rows(NKcellFreqStats)
 ```
 
-```{r Section 6: Tissue Distribution - Graphing B, T, and NK subsets of interest across tissues}
+```{r Section 5: Tissue Distribution - Graphing B, T, and NK subsets of interest across tissues}
 #create a vector of immune subsets that were statistically different across LN types
 TissueSigPops <- c("B cells CD11c+", "CD4 Tem CD38+", "CD8 Tem PD1+", "CD8 Tcm", "CD4 Tem CD38+")
 
@@ -707,10 +682,10 @@ TissueSigPopsGraphs <- lapply(TissueSigPops, function(i) {
 })
 ```
 
-```{r Section 6: Tissue Distribution - Generate PCA-compatible dataframe and metadata for entire dataset}
+```{r Section 5: Tissue Distribution - Generate PCA-compatible dataframe and metadata for entire dataset}
 #PCA compatible dataframe for the entire dataset
 dfPCA <- dfLineageFilter %>%
-   dplyr::select(1:Tissue, metric:ncol(dfLineage)) %>%
+  dplyr::select(1:Tissue, metric:ncol(dfLineage)) %>%
   pivot_wider(id_cols = `HPAP Donor`:`Tissue`, names_from = metric, values_from = value) %>%
   mutate(Sample_ID = paste("S", as.character(row_number()), sep = "")) %>%
   relocate(Sample_ID, .before = `HPAP Donor`) %>%
@@ -721,9 +696,9 @@ dfPCAMetadata <-  dplyr::select(dfPCA, Tissue, `HPAP Donor`)
 dfPCAMetadata$Sample_ID <- rownames(dfPCAMetadata)
 ```
 
-```{r Section 6: Tissue Distribution - Generate PCA plots/biplots to examine tissue immune lineage differences}
+```{r Section 5: Tissue Distribution - Generate PCA plots/biplots to examine tissue immune lineage differences}
 #PCA for immune lineage
-dfLineagePCA <- select(dfPCA, LineageList)
+dfLineagePCA <- dplyr::select(dfPCA, LineageList)
 TotalLinPCA <- prcomp(dfLineagePCA, scale. = TRUE)
 
 dfTotalLinPCA <- TotalLinPCA$x %>%
@@ -750,7 +725,7 @@ saveRDS(TotalLinPCAplot, file = "./outs/rds/LinPCA.RDS")
 dfTotalLinBiplot <- TotalLinPCA$rotation %>%
   as.data.frame() %>%
   mutate(Population = rownames(TotalLinPCA$rotation))
-  
+
 TotalLinBiPlot <- dfTotalLinBiplot %>%
   ggplot(aes(PC1, PC2)) +
   geom_segment(aes(x = 0, y = 0, xend = dfTotalLinBiplot$PC1, yend = dfTotalLinBiplot$PC2), 
@@ -765,13 +740,14 @@ TotalLinBiPlot <- dfTotalLinBiplot %>%
                   min.segment.length = 0.2,
                   segment.color = "darkblue",
                   segment.alpha = 0.5,
-                  segment.size = 0.2) +
+                  segment.size = 0.2,
+                  seed = 42) +
   theme_classic()
 TotalLinBiPlot
 saveRDS(TotalLinBiPlot, file = "./outs/rds/LinPCAbiplot.RDS")
 ```
 
-```{r Section 6: Tissue Distribution - Generate PCA plots/biplots to examine tissue CD4+ T cell differences}
+```{r Section 5: Tissue Distribution - Generate PCA plots/biplots to examine tissue CD4+ T cell differences}
 pcaCD4Pops <- c()
 pcaCD4Pops <- append(pcaCD4Pops, str_match(colnames(dfPCA), "^CD4 .*$"))
 pcaCD4Pops <- pcaCD4Pops[!is.na(pcaCD4Pops)]
@@ -786,7 +762,7 @@ pcaCD4Pops <- pcaCD4Pops[pcaCD4Pops != ""]
 
 #MAJOR ISSUE: because there were significant differences between researchers, some populations were omitted from the dataset. These produce NA values, and therefore the prcomp function must use a dataframe that either omits the rows or the columns with NA. Both options are explored below...
 
-#filtering out Alberto's samples
+#filtering out Scientist A's samples
 dfCD4forPCA <- dfPCA %>%
   #filter(Tissue != "Spleen") %>%
   filter(!is.na(`CD4 Tcm CD25+`)) %>%
@@ -831,8 +807,8 @@ CD4BiPlot
 ```
 
 
-Section 7: Immune Population Frequencies Across Disease State
-```{r Section 7: Disease State - Checking metadata differences}
+Section 6: Immune Population Frequencies Across Disease State
+```{r Section 6: Disease State - Checking cold ischemia differences}
 MetaFactors <- c("HPAP Donor", "Disease Status", "Tissue", "cold_ischemia", "Sex", "Age", "Staining_Flow_Researcher")
 
 dfMetaCheck <- dfLineageFilter %>%
@@ -842,37 +818,22 @@ dfMetaCheck <- dfLineageFilter %>%
 
 #GGally::ggpairs(dfMetaCheck, cardinality_threshold = 46)
 
-#ageDisease <- dfMetaCheck %>%
-  #mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
-  #ggplot(aes(`Disease Status`, Age)) +
-  #geom_boxplot() +
-  #ylab("Age (years)") +
-  #theme_classic() +
-  #theme(axis.title.x = element_blank())
-#ggsave(plot = ageDisease,
-       #filename = "AgeDisease.png",
-       #device = "png",
-       #path = "./outs/png/",
-       #width = 5,
-       #height = 3,
-       #units = "in",
-       #dpi = 300)
+coldIsDisease <- dfMetaCheck %>%
+  mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
+  ggplot(aes(`Disease Status`, cold_ischemia)) +
+  geom_boxplot() +
+  ylab("Cold Ischemia Time (hr)") +
+  theme_classic() +
+  theme(axis.title.x = element_blank())
 
-#coldIsDisease <- dfMetaCheck %>%
-  #mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
-  #ggplot(aes(`Disease Status`, cold_ischemia)) +
-  #geom_boxplot() +
-  #ylab("Cold Ischemia Time (hr)") +
-  #theme_classic() +
-  #theme(axis.title.x = element_blank())
-#ggsave(plot = coldIsDisease,
-       #filename = "coldIschemiaDisease.png",
-       #device = "png",
-       #path = "./outs/png/",
-       #width = 5,
-       #height = 3,
-       #units = "in",
-       #dpi = 300)
+ggsave(plot = coldIsDisease,
+       filename = "coldIschemiaDisease.png",
+       device = "png",
+       path = "./outs/png/",
+       width = 5,
+       height = 3,
+       units = "in",
+       dpi = 300)
 
 #the above graphs show that cold ischemia time is significantly lower in normal donors compared to AAb+ and T1D donors. This will have to be accounted for in further analyses.
 #generating plots to check if cold ischemia influences the rate of any immune populations
@@ -883,6 +844,9 @@ dfAllPopsFreqStats <- dfLineageFilter %>%
 colnames(dfAllPopsFreqStats) <- gsub("\\+ \\(\\%T ?cells\\)", "", colnames(dfAllPopsFreqStats))
 colnames(dfAllPopsFreqStats) <- gsub(" ", "_", colnames(dfAllPopsFreqStats))
 
+#robust ANOVA of cold ischemia time across the 3 disease states shows trending significantly lower cold ischemia in ND
+lincon(cold_ischemia ~ Disease_Status, data = distinct(dfAllPopsFreqStats, HPAP_Donor, Disease_Status, cold_ischemia), tr = 0.1)
+
 #inputs and function that generates correlation p values for cold ischemia v all immune populations
 coldIsFreqStats <- filter(dfAllPopsFreqStats, !is.na(cold_ischemia)) %>%
   filter(Disease_Status == "ND") %>%
@@ -891,8 +855,8 @@ coldIsPops <- colnames(coldIsFreqStats[15:ncol(coldIsFreqStats)])
 
 dfcoldIsCorrStats <- lapply(coldIsPops, function(x) {
   corrx <- cor_test(coldIsFreqStats, x, cold_ischemia, method = "spearman")
-})
-dfcoldIsCorrStats <- bind_rows(dfcoldIsCorrStats)
+}) %>%
+  bind_rows()
 
 #for exporting a table figure of all immune populations significantly correlated with cold ischemia time
 #coldIsCorrTable <- dfcoldIsCorrStats %>%
@@ -907,36 +871,55 @@ dfcoldIsCorrStats <- bind_rows(dfcoldIsCorrStats)
        #filename = "ColdIschemiaCorrelations.png",
        #path = "./outs/tables")
 
-#checking which immune populations correlate with age, as a positive control
-AgeFreqStats <- filter(dfAllPopsFreqStats, !is.na(Age)) %>%
-  filter(Disease_Status == "ND")
-AgePops <- colnames(coldIsFreqStats[15:ncol(coldIsSFreqStats)])
-
-dfAgeCorrStats <- lapply(AgePops, function(x) {
-  corrx <- cor_test(AgeFreqStats, x, Age, method = "spearman")
-})
-dfAgeCorrStats <- bind_rows(dfAgeCorrStats)
-
-#AgeCorrTable <- dfAgeCorrStats %>%
-  #select(var1, cor, p) %>%
-  #rename("Immune Population" = "var1") %>%
-  #rename("p value" = "p") %>%
-  #filter(`p value` < 0.05) %>%
-  #arrange(desc(cor)) %>%
-  #gt()
-
-#gtsave(AgeCorrTable,
-       #filename = "AgeCorrelations.png",
-       #path = "./outs/tables")
-
-#Tnaive cells as negatively correlated population, which is a known effect. The populations between the cold ischemia time and age do not overlap strongly, either.
-
 #for visualizing plots of interest (correlation value >= 0.3 or <= -0.3)
-coldIsPops2 <- dfcoldIsCorrStats %>%
+dfcoldIsPops2 <- dfcoldIsCorrStats %>%
   filter(cor >= 0.3 | cor <= -0.3) %>%
   arrange(desc(cor))
-coldIsPops2 <- coldIsPops2$var1
+coldIsPops2 <- dfcoldIsPops2$var1
 
+#create a dataframe for labeling points in correlation ranked plot below:
+dfcoldIsPopsLebel <- dfcoldIsPops2 %>%
+  filter(!str_detect(var1, "CD._T.*_CD127.CD27.")) %>%
+  filter(!str_detect(var1, "CD._Tn_CD27.")) %>%
+  filter(!str_detect(var1, "CD._Tn_CD127.")) %>%
+  filter(!str_detect(var1, "CD._T.*_CD127\\+CD27\\+")) %>%
+  filter(!str_detect(var1, "^CD._Mem_CD.*$")) %>%
+  filter(!str_detect(var1, "^CD._Mem_.*\\+$")) %>%
+  filter(cor >= 0.3 | cor <= -0.3)
+
+
+#ranked correlation plot of cold ischemia effects on immune population frequency
+coldIsRankedPlot <- dfcoldIsCorrStats %>%
+  filter(!is.na(cor)) %>%
+  filter(!str_detect(var1, "CD._T.*_CD127.CD27.")) %>%
+  filter(!str_detect(var1, "CD._Tn_CD27.")) %>%
+  filter(!str_detect(var1, "CD._Tn_CD127.")) %>%
+  filter(!str_detect(var1, "CD._T.*_CD127\\+CD27\\+")) %>%
+  filter(!str_detect(var1, "^CD._Mem_CD.*$")) %>%
+  filter(!str_detect(var1, "^CD._Mem_.*\\+$")) %>%
+  ggplot(aes(reorder(var1, -cor), cor)) +
+  geom_hline(yintercept = c(0.3, -0.3),
+             linetype = "dashed",
+             color = "grey") +
+  geom_point(size = 0.3) + 
+  geom_point(data = dfcoldIsPopsLebel, aes(var1, cor), color = "blue", size = 0.3) +
+  geom_text_repel(data = filter(dfcoldIsPopsLebel), 
+                  aes(var1, cor, label = var1), size = 0.8, seed = 42, 
+                  segment.size = 0.1, segment.alpha = 0.3, max.overlaps = 50) +
+  ylab("Spearmann Corr. Value") +
+  xlab("Immune Population") +
+  theme_classic() +
+  theme(
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(size = 6),
+    axis.ticks.length.x = unit(0, "in"),
+    axis.title.x = element_text(size = 8),
+    axis.title.y = element_text(size = 8)
+  )
+
+coldIsRankedPlot
+saveRDS(coldIsRankedPlot, file = "./outs/rds/cold-ischemia-ranked.RDS")
+  
 #coldIsPlots <- coldIsFreqStats %>%
   #pivot_longer(cols = `CD45+`:ncol(coldIsFreqStats), names_to = "metric", values_to = "value") %>%
   #filter(metric %in% coldIsPops2) %>%
@@ -963,7 +946,49 @@ coldIsPops2 <- coldIsPops2$var1
 #Cold ischemia must be considered in any statistical tests comparing immune populations across disease status if cold ischemia has a significant effect. Please see below for what is determined as "significant".
 ```
 
-```{r Section 7: Disease State - Immune population statistical differences across disease state: separate tissues}
+```{r Section 6: Disease State - Checking age differences}
+#ageDisease <- dfMetaCheck %>%
+  #mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
+  #ggplot(aes(`Disease Status`, Age)) +
+  #geom_boxplot() +
+  #ylab("Age (years)") +
+  #theme_classic() +
+  #theme(axis.title.x = element_blank())
+#ggsave(plot = ageDisease,
+       #filename = "AgeDisease.png",
+       #device = "png",
+       #path = "./outs/png/",
+       #width = 5,
+       #height = 3,
+       #units = "in",
+       #dpi = 300)
+
+#checking which immune populations correlate with age, as a positive control
+#AgeFreqStats <- filter(dfAllPopsFreqStats, !is.na(Age)) %>%
+  #filter(Disease_Status == "ND")
+#AgePops <- colnames(coldIsFreqStats[15:ncol(coldIsFreqStats)])
+
+#dfAgeCorrStats <- lapply(AgePops, function(x) {
+  #corrx <- cor_test(AgeFreqStats, x, Age, method = "spearman")
+#})
+#dfAgeCorrStats <- bind_rows(dfAgeCorrStats)
+
+#AgeCorrTable <- dfAgeCorrStats %>%
+  #select(var1, cor, p) %>%
+  #rename("Immune Population" = "var1") %>%
+  #rename("p value" = "p") %>%
+  #filter(`p value` < 0.05) %>%
+  #arrange(desc(cor)) %>%
+  #gt()
+
+#gtsave(AgeCorrTable,
+       #filename = "AgeCorrelations.png",
+       #path = "./outs/tables")
+
+#Tnaive cells negatively correlate with age, which is a known effect. The populations between the cold ischemia time and age do not overlap strongly, either.
+```
+
+```{r Section 6: Disease State - Immune population statistical differences across disease state: separate tissues}
 # the above section shows that cold ischemia time has a significant impact across disease state on certain immune populations.
 # To control for this, ANCOVA will be used to account for cold ischemia time.
 # Populations affected by cold ischemia are defined as having a significant p value and an R value >= 0.3 or <= -0.3.
@@ -1004,7 +1029,7 @@ dfDiseaseTissuesSepStats <- tissueColisANOVA(anovapops = TissueSepAnovapops,
                                               selectpops = coldIsPops2)
 ```
 
-```{r Section 7: Disease State - Generate heatmap showing significantly changing populations across disease states}
+```{r Section 6: Disease State - Generate heatmap showing significantly changing populations across disease states}
 LNcolor <- c("pLN" = "#0777B6", "mLN" = "#73A942", "Spleen" = "#BC4749")
 LNorder <- c("pLN", "mLN", "Spleen")
 pvalColor <- c("ns" = "#dadaeb", "*" = "#b3cde3", "**" = "#8c96c6", "***" = "#88419d")
@@ -1064,13 +1089,14 @@ DiseaseAnn <- HeatmapAnnotation(`LNs` = dfsigPopsHeatmap$tissue,
                               which = "row",
                               col = list(`LNs` = LNcolor, `NDT1D` = pvalColor, 
                                          `NDAAb` = pvalColor, `AAbT1D` = pvalColor),
+                              simple_anno_size = unit(0.1, "in"),
                               show_annotation_name = TRUE,
                               annotation_label = c(`LNs` = "Tissue", `NDAAb` = "ND v AAb+", 
                                                    `AAbT1D` = "AAb+ v T1D", `NDT1D` = "ND v T1D"),
                               annotation_name_side = "top",
                               annotation_name_rot = 45,
                               annotation_name_offset = unit(0.05, "in"),
-                              annotation_name_gp = gpar(fontsize = 8),
+                              annotation_name_gp = gpar(fontsize = 6),
                               gap = unit(c(0.1, 0, 0), "in"),
                               show_legend = c(`LNs` = TRUE, `NDAAb` = TRUE,
                                               `AAbT1D` = FALSE, `NDT1D` = FALSE),
@@ -1094,7 +1120,7 @@ DiseaseAnn <- HeatmapAnnotation(`LNs` = dfsigPopsHeatmap$tissue,
                                   title_gp = gpar(fontsize = 6)) 
                               ))
                           
-set.seed(9)
+set.seed(42)
 
 DiseaseHeatmap <- Heatmap(dfsigPopsHeatmapPlot,
                       name = "Mean Z-score",
@@ -1104,7 +1130,7 @@ DiseaseHeatmap <- Heatmap(dfsigPopsHeatmapPlot,
                       column_names_side = "top",
                       column_names_rot = 0,
                       column_names_centered = TRUE,
-                      column_names_gp = gpar(fontsize = 8, fontface = "bold"),
+                      column_names_gp = gpar(fontsize = 7, fontface = "bold"),
                       row_km = 3,
                       row_gap = unit(0.1, "in"),
                       right_annotation = DiseaseAnn,
@@ -1125,7 +1151,7 @@ draw(DiseaseHeatmap, merge_legends = TRUE, heatmap_legend_side = "bottom")
 saveRDS(DiseaseHeatmap, file = "./outs/rds/DiseaseHeatmap.RDS")
 ```
 
-```{r Section 7: Disease State - CD25+ and CD38+ frequency across all T cell subsets}
+```{r Section 6: Disease State - CD25+ and CD38+ frequency across all T cell subsets}
 #the previous section demonstrated that CD25 changed across disease state in many T cell subsets.
 #this will be explored further within this section
 diseaseColors <- c("ND" = "#949494", "AAb+" = "#2E96FF", "T1D" = "#FF8B3D")
@@ -1151,214 +1177,53 @@ dfDiseaseScales <- dfLineageFilter %>%
                         str_detect(metric, "Tem$") ~ "Tem",
                         str_detect(metric, "CD4 Mem") ~ "Mem")) %>%
   mutate(tpop = as_factor(tpop)) %>%
-  mutate(tpop = fct_relevel(tpop, "Tn", "Tnl", "Tcm", "Tem", "Temra")) %>%
-  group_by(metric, LN_type, `Disease Status`) %>%
-  mutate(mean_z = mean(z_score)) %>%
-  mutate(mean = mean(value))
+  mutate(tpop = fct_relevel(tpop, "Tn", "Tnl", "Tcm", "Tem", "Temra"))
 
-CD25_disease_line_Zscore <- dfDiseaseScales %>%
-    filter(grepl("CD25+", metric)) %>%
-    filter(LN_type == "mLN") %>%
-    ggplot(aes(`Disease Status`, mean_z, color = tpop, group = tpop)) +
-    geom_point() +
-    geom_line() +
-    theme_classic() +
-    theme(axis.title.x = element_blank(),
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          axis.title.y = element_text(size = 8),
-          legend.key.size = unit(0.1, 'in'), #change legend key size
-          legend.key.height = unit(0.1, 'in'), #change legend key height
-          legend.key.width = unit(0.1, 'in'), #change legend key width
-          legend.title = element_text(size=8), #change legend title font size
-          legend.text = element_text(size=6)) + #change legend text font size
-    facet_wrap(vars(cd, LN_type)) +
-    theme(strip.text.x = element_blank())
-CD25_disease_line_Zscore
-ggsave(filename = "CD25_disease_line_Zscore.pdf",
-       plot = CD25_disease_line_Zscore,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 3,
-       height = 1.5,
-       units = "in")
+CD25_CD38_boxplot_list <- list("CD25+_CD4_CD4+ T cells" , "CD25+_CD8_CD8+ T cells", "CD38+_CD4_CD4+ T cells", "CD38+_CD8_CD8+ T cells") #string will be split at _ for graph creation
 
-CD25_disease_line_NonNorm <- dfDiseaseScales %>%
-    filter(grepl("CD25+", metric)) %>%
-    filter(LN_type == "pLN") %>%
-    ggplot(aes(`Disease Status`, mean, color = tpop, group = tpop)) +
-    geom_point() +
-    geom_line() +
-    theme_classic() +theme(axis.title.x = element_blank(),
-          axis.text.x = element_text(angle = 45, hjust = 1),
-          axis.title.y = element_text(size = 8),
-          legend.key.size = unit(0.1, 'in'), #change legend key size
-          legend.key.height = unit(0.1, 'in'), #change legend key height
-          legend.key.width = unit(0.1, 'in'), #change legend key width
-          legend.title = element_text(size=8), #change legend title font size
-          legend.text = element_text(size=6)) + #change legend text font size
-    facet_wrap(vars(cd), scales = "free_y") +
-    theme(strip.text.x = element_blank())
-CD25_disease_line_NonNorm
-ggsave(filename = "CD25_disease_line_NonNorm.pdf",
-       plot = CD25_disease_line_NonNorm,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 3,
-       height = 1.5,
-       units = "in")
+CD25_CD38_facetLabels <- c("Tn", "Tnl", "Tcm", "Tem", "Temra")
 
-CD38_disease_line_Zscore <- dfDiseaseScales %>%
-    filter(grepl("CD38+", metric)) %>%
+CD25_CD38_boxplot_graphs <- lapply(CD25_CD38_boxplot_list, function(c) {
+  strings <- unlist(strsplit(c, "_"))
+  message(paste("Generating a graph for", strings[1], strings[3]))
+  graph <- dfDiseaseScales %>%
+    filter(grepl(strings[1], metric)) %>%
     filter(!grepl("HLA-DR+", metric)) %>%
-    filter(LN_type == "pLN") %>%
-    ggplot(aes(`Disease Status`, mean_z, color = tpop, group = tpop)) +
-    geom_point() +
-    geom_line() +
-    theme_classic() +
-    theme(axis.title.x = element_blank(),
-        axis.text.x = element_text(angle = 45, hjust = 1),
-        axis.title.y = element_text(size = 8),
-        legend.key.size = unit(0.1, 'in'), #change legend key size
-        legend.key.height = unit(0.1, 'in'), #change legend key height
-        legend.key.width = unit(0.1, 'in'), #change legend key width
-        legend.title = element_text(size=8), #change legend title font size
-        legend.text = element_text(size=6)) + #change legend text font size
-    facet_wrap(vars(cd, LN_type)) +
-    theme(strip.text.x = element_blank())
-CD38_disease_line_Zscore
-ggsave(filename = "CD38_disease_line_Zscore.pdf",
-       plot = CD38_disease_line_Zscore,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 3,
-       height = 1.5,
-       units = "in")
-
-CD38_disease_line_NonNorm <- dfDiseaseScales %>%
-    filter(grepl("CD38+", metric)) %>%
-    filter(!grepl("HLA-DR+", metric)) %>%
-    filter(LN_type == "pLN") %>%
-    ggplot(aes(`Disease Status`, mean, color = tpop, group = tpop)) +
-    geom_point() +
-    geom_line() +
-    theme_classic() +theme(axis.title.x = element_blank(),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      axis.title.y = element_text(size = 8),
-      legend.key.size = unit(0.1, 'in'), #change legend key size
-      legend.key.height = unit(0.1, 'in'), #change legend key height
-      legend.key.width = unit(0.1, 'in'), #change legend key width
-      legend.title = element_text(size=8), #change legend title font size
-      legend.text = element_text(size=6)) + #change legend text font size
-    facet_wrap(vars(cd)) +
-    theme(strip.text.x = element_blank())
-CD38_disease_line_NonNorm
-ggsave(filename = "CD38_disease_line_NonNorm.pdf",
-       plot = CD38_disease_line_NonNorm,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 3,
-       height = 1.5,
-       units = "in")
-
-CD25_CD38_boxplot_settings <- list(geom_boxplot(width = 0.8,
+    filter(LN_type != "Spleen") %>%
+    filter(cd == strings[2]) %>%
+    ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
+      ylab(paste("% of", strings[3])) +
+      geom_boxplot(width = 0.8,
                outlier.shape = NA,
-               show.legend = FALSE),
-               geom_point(
-                  size = 1,
-                  stroke = 0.2,
-                  alpha = 0.4,
-                  show.legend = FALSE,
-                  position = position_jitterdodge(jitter.width = 1, 
-                                                  dodge.width = 0.8)),
-               ylab("% of parent"),
-               scale_color_manual(values = diseaseColors),
-               theme_classic(),
-               theme(
-                 axis.title.x = element_blank(),
-                 axis.text.x = element_text(angle = 45, hjust = 1),
-                 axis.title.y = element_text(size = 8)
-              ))
-
-CD25_boxplots_CD4 <- dfDiseaseScales %>%
-  filter(grepl("CD25+", metric)) %>%
-  filter(LN_type != "Spleen") %>%
-  filter(cd == "CD4") %>%
-  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
-    CD25_CD38_boxplot_settings +
-    facet_grid(cols = vars(tpop), switch = "y") +
-    theme(strip.text.x = element_blank())
-CD25_boxplots_CD4
-ggsave(filename = "CD25_boxplots_CD4.pdf",
-       plot = CD25_boxplots_CD4,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 4,
-       height = 1.5,
-       units = "in")
-
-CD25_boxplots_CD8 <- dfDiseaseScales %>%
-  filter(grepl("CD25+", metric)) %>%
-  filter(LN_type != "Spleen") %>%
-  filter(cd == "CD8") %>%
-  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
-    CD25_CD38_boxplot_settings +
-    facet_grid(cols = vars(tpop), switch = "y") +
-    theme(strip.text.x = element_blank())
-CD25_boxplots_CD8
-ggsave(filename = "CD25_boxplots_CD8.pdf",
-       plot = CD25_boxplots_CD8,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 4,
-       height = 1.5,
-       units = "in")
-
-CD38_boxplots_CD4 <- dfDiseaseScales %>%
-  filter(grepl("CD38+", metric)) %>%
-  filter(!grepl("HLA-DR+", metric)) %>%
-  filter(LN_type != "Spleen") %>%
-  filter(cd == "CD4") %>%
-  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
-    CD25_CD38_boxplot_settings +
-    facet_grid(cols = vars(tpop), switch = "y") +
-    theme(strip.text.x = element_blank())
-CD38_boxplots_CD4
-ggsave(filename = "CD38_boxplots_CD4.pdf",
-       plot = CD38_boxplots_CD4,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 4,
-       height = 1.5,
-       units = "in")
-
-CD38_boxplots_CD8 <- dfDiseaseScales %>%
-  filter(grepl("CD38+", metric)) %>%
-  filter(!grepl("HLA-DR+", metric)) %>%
-  filter(LN_type != "Spleen") %>%
-  filter(cd == "CD8") %>%
-  ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
-    CD25_CD38_boxplot_settings +
-    facet_grid(cols = vars(tpop), switch = "y") +
-    theme(strip.text.x = element_blank())
-CD38_boxplots_CD8
-ggsave(filename = "CD38_boxplots_CD8.pdf",
-       plot = CD38_boxplots_CD8,
-       device = "pdf",
-       path = "./outs/pdf/",
-       width = 4,
-       height = 1.5,
-       units = "in")
-
-
+               show.legend = FALSE) +
+       geom_point(
+          size = 1,
+          stroke = 0.2,
+          alpha = 0.4,
+          show.legend = FALSE,
+          position = position_jitterdodge(jitter.width = 1, dodge.width = 0.8)) +
+       scale_color_manual(values = diseaseColors) +
+       theme_classic() +
+       theme(axis.title.x = element_blank(),
+         axis.text.x = element_text(angle = 45, hjust = 1),
+         axis.title.y = element_text(size = 8)) +
+      facet_grid(cols = vars(tpop), switch = "y")
+  saveRDS(graph, file = paste0("./outs/rds/",strings[1], " ", strings[3], " boxplots.RDS"))
+  })
 ```
 
+```{r Section 6: Disease State - Box Plots for significantly changing populations}
+#the heatmap above showed significant changes across disease state for these populations: CD25+ T cells, CD4 Tn cells, NK cell cytotoxicity, and CD27+ B cells. 
+#reductions in CD25+ frequency in AAb+ pLN in several T cell subsets implies Tregs may also be affected, so Tregs will be plotted across disease state (CD25 was plotted above).
 
-```{r}
-diseaseColors <- c("#949494", "#2E96FF", "#FF8B3D")
+Disease_BoxPlots_pops <- list("pLN_B cells CD27+_B cells", "pLN_CD4 Mem Tregs_Mem CD4+ T cells", "pLN_NK CD56dimCD16+_NK cells", "pLN_CD4 Tn_CD4+ T cells", "mLN_CD4 Tn_CD4+ T cells") #underscore denotes where string split will occur
 
-testplot <- dfLineageFilter %>%
-    filter(metric == "CD8 Tcm CD25+") %>%
-    filter(LN_type == "pLN") %>%
+Disease_BoxPlots_graphs <- lapply(Disease_BoxPlots_pops, function(d) {
+  message("Generating a graph for ", d)
+  strings <- unlist(strsplit(d, "_"))
+  graph <- dfLineageFilter %>%
+    filter(LN_type == strings[1]) %>%
+    filter(metric == strings[2]) %>%
     mutate(`Disease Status` = fct_relevel(`Disease Status`, "ND", "AAb+", "T1D")) %>%
     ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
     geom_boxplot(width = 0.8,
@@ -1371,7 +1236,7 @@ testplot <- dfLineageFilter %>%
       show.legend = FALSE,
       position = position_jitterdodge(jitter.width = 1, 
                                       dodge.width = 0.8)) +
-    ylab("% of parent") +
+    ylab(paste("% of", strings[3])) +
     scale_color_manual(values = diseaseColors) +
     theme_classic() +
     theme(
@@ -1379,6 +1244,42 @@ testplot <- dfLineageFilter %>%
     axis.text.x = element_text(angle = 45, hjust = 1),
     axis.title.y = element_text(size = 8)
     )
-testplot
+  saveRDS(graph, file = paste0("./outs/rds/",strings[2], " ", strings[1], " boxplots.RDS"))
+})
 ```
 
+```{r Section 6: Disease State - CD27+ and CD127+ across disease in statistically significant populations}
+#the heatmap in the section above showed that CD27 and CD127 was significantly modulated across disease state in CD4+ Tem, CD4+ Temra, and CD8+ Tnl cells. 
+#Therefore, CD27/CD127 will be plotted in these populations.
+
+df_CD27_CD127_Disease <- dfDiseaseScales %>%
+  filter(LN_type == "pLN") %>%
+  filter(grepl(" CD27\\+$|CD127\\+$", metric)) %>%
+  filter(tpop != "Tn") %>%
+  dplyr::select(!z_score) %>%
+  mutate(metric = str_remove_all(metric, "CD. \\w{3,5} ")) 
+
+CD27_CD127_tpop_list <- list("CD4 Tem", "CD4 Temra", "CD8 Tnl")
+
+CD27_CD127_graphs <- list()
+CD27_CD127_graphs <- lapply(CD27_CD127_tpop_list, function(t) {
+  message("Generating CD27/CD127 graphs for ", t)
+  cdlist <- unlist(strsplit(t, " "))
+  CD27_CD127_graph <- df_CD27_CD127_Disease %>%
+    filter(cd == as.character(cdlist[1])) %>%
+    filter(tpop == as.character(cdlist[2])) %>%
+    ggplot(aes(value, `Disease Status`, color = `Disease Status`, fill = `Disease Status`)) +
+    geom_density_ridges(quantile_lines = TRUE, quantiles = c(0.25, 0.5, 0.75), alpha = 0.7) +
+    xlab(paste0(c("% of", cdlist[1], cdlist[2]), collapse = " ")) +
+    theme_classic() +
+    theme(
+      legend.position = "none"
+    ) +
+    xlim(0, 100) +
+    scale_color_manual(values = diseaseColors) +
+    scale_fill_manual(values = diseaseColors) +
+    facet_wrap(vars(metric), nrow = 2) +
+    theme(strip.text.x = element_blank())
+  saveRDS(CD27_CD127_graph, file = paste0("./outs/rds/", cdlist[1], " ", cdlist[2], " CD27-CD127", " ridgelines.RDS"))
+})
+```

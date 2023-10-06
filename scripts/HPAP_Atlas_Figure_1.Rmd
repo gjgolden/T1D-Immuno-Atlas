@@ -17,6 +17,8 @@ library(ggplot2)
 library(patchwork)
 library(ComplexHeatmap)
 library(grid)
+library(ggpubr)
+library(png)
 ```
 
 Commonly Used Plot Paramaeters
@@ -38,11 +40,18 @@ FigBlank <- dfFigBlank %>%
 #FigBlank
 ```
 
+```{r pLN UMAP Flow Cytometry}
+figPLNumap <- readPNG(source = "./images_for_import/Fig1A.png", native = TRUE)
+```
+
+```{r Spleen UMAP Flow Cytometry}
+figSpleenUmap <- readPNG(source = "./images_for_import/Fig1B.png", native = TRUE)
+```
+
 ```{r Lineage Heatmap}
 figLineageHeatmap <- readRDS(file = "./outs/rds/LinHeatmap.RDS")
 
 figLineageHeatmap <-grid.grabExpr(draw(figLineageHeatmap, merge_legends = TRUE))
-figLineageHeatmap
 #need to save the heatmap as a grob object for downstream figure creation
 ```
 
@@ -54,7 +63,6 @@ PCAlegend <- as_ggplot(get_legend(figLineagePCA + theme(legend.key.height = unit
         legend.position = "right",
         legend.title = element_text(size = 6),
         legend.text = element_text(size = 4))))
-PCAlegend
 
 figLineagePCA <- figLineagePCA +
   subplotTheme +
@@ -62,15 +70,17 @@ figLineagePCA <- figLineagePCA +
         legend.key.width = unit(0.05, "in"),
         legend.position = "right",
         legend.title = element_text(size = 6),
-        legend.text = element_text(size = 4))
+        legend.text = element_text(size = 4),
+        plot.margin = margin(t = -5, r = -5, b = -5, l = -5), 
+        legend.margin = margin(t = 0, r = 0, b = 0, l = -5)) 
 ```
 
 ```{r Lineage PCA BiPlot}
 figLineageBiplot <- readRDS(file = "./outs/rds/LinPCAbiplot.RDS")
 
 figLineageBiplot <- figLineageBiplot +
-  subplotTheme
-  
+  subplotTheme +
+  theme(plot.margin = margin(t = -5, r = -5, b = -5, l = 2))
 ```
 
 ```{r B cells}
@@ -146,36 +156,46 @@ figLineageCD8Tn <- figLineageCD8Tn +
 ```
 
 ```{r Figure 1 Assembly}
-commonMargins <- margin(t = -5, r = -5, b = -5, l = -5)
-
 F1layout <- c(
-  area(t = 1, l = 1, b = 2, r = 5), #A
-  area(t = 1, l = 6, b = 2, r = 10), #B
-  area(t = 1, l = 11, b = 4, r = 20), #C
-  area(t = 3, l = 1, b = 4, r = 5), #D
-  area(t = 3, l = 6, b = 4, r = 10), #E
-  area(t = 5, l = 1, b = 6, r = 5), #F
-  area(t = 5, l = 6, b = 6, r = 10), #G
-  area(t = 5, l = 11, b = 6, r = 15), #H
-  area(t = 5, l = 16, b = 6, r = 20) #I
+  patchwork::area(t = 1, l = 1, b = 2, r = 4), #A
+  patchwork::area(t = 1, l = 5, b = 2, r = 10), #B
+  patchwork::area(t = 1, l = 11, b = 4, r = 20), #C
+  patchwork::area(t = 3, l = 1, b = 4, r = 5), #D
+  patchwork::area(t = 3, l = 6, b = 4, r = 10) #E
 )
 
+set.seed(10)
+
 Figure1 <- wrap_elements(FigBlank) + #A
+  inset_element(p = figPLNumap, left = 1, bottom = 0, right = 0, top = 1, 
+                align_to = "panel", ignore_tag = TRUE, on_top = FALSE, clip = FALSE) +
   wrap_elements(FigBlank) + #B
+  inset_element(p = figSpleenUmap, left = 1, bottom = 0, right = 0, top = 1, 
+                align_to = "panel", ignore_tag = TRUE, on_top = FALSE, clip = FALSE) +
   wrap_elements(panel = figLineageHeatmap) + #C
-  wrap_elements(panel = figLineagePCA + theme(plot.margin = margin(t = -5, r = -5, b = -5, l = -5), legend.margin = margin(t = 0, r = 0, b = 0, l = -5))) + #D
-  wrap_elements(panel = figLineageBiplot + theme(plot.margin = commonMargins)) + #E
-  wrap_elements(panel = figLineageBcells + theme(plot.margin = commonMargins)) + #F
-  wrap_elements(panel = figLineageTcells + theme(plot.margin = commonMargins)) + #G
-  wrap_elements(panel = figLineageNKcells + theme(plot.margin = commonMargins)) + #H
-  wrap_elements(panel = figLineageCD8Tcm + theme(plot.margin = commonMargins)) + #I
+  wrap_elements(panel = figLineagePCA) + #D
+  wrap_elements(panel = figLineageBiplot) + #E
   plot_layout(design = F1layout) + #layout
   plot_annotation(tag_levels = "A") & #annotation mods
   theme(plot.tag = element_text(size = 12,
                                 face = "bold", 
-                                family = "sans")) 
-            
-Figure1
+                                family = "sans"),
+        
+        plot.tag.position = c(0,1))
+```
+
+```{r extra code}
+#plot areas for V1 layout with boxplots on bottom row
+  #area(t = 5, l = 1, b = 6, r = 5), #F
+  #area(t = 5, l = 6, b = 6, r = 10), #G
+  #area(t = 5, l = 11, b = 6, r = 15), #H
+  #area(t = 5, l = 16, b = 6, r = 20) #I
+
+#insertion of boxplots from V1
+  #wrap_elements(panel = figLineageBcells + theme(plot.margin = commonMargins)) + #F
+  #wrap_elements(panel = figLineageTcells + theme(plot.margin = commonMargins)) + #G
+  #wrap_elements(panel = figLineageNKcells + theme(plot.margin = commonMargins)) + #H
+  #wrap_elements(panel = figLineageCD8Tcm + theme(plot.margin = commonMargins)) + #I
 ```
 
 Figure Export
@@ -185,7 +205,7 @@ ggsave(filename = "Figure1.png",
        device = "png",
        path = "./outs/figures",
        width = 7.5,
-       height = 5,
+       height = 3,
        units = "in",
-       dpi = 300)
+       dpi = 600)
 ```
