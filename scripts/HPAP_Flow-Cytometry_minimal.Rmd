@@ -844,20 +844,19 @@ dfDiseaseScales <- dfLineageFilter %>%
   mutate(tpop = as_factor(tpop)) %>%
   mutate(tpop = fct_relevel(tpop, "Tn", "Tnl", "Tcm", "Tem", "Temra"))
 
-CD25_CD38_boxplot_list <- list("CD25+_CD4_CD4+ T cells" , "CD25+_CD8_CD8+ T cells", "CD38+_CD4_CD4+ T cells", "CD38+_CD8_CD8+ T cells") #string will be split at _ for graph creation
+CD25_CD38_boxplot_list <- list("CD25+_CD4_CD4+ T cells_pLN" , "CD25+_CD8_CD8+ T cells_pLN", "CD38+_CD4_CD4+ T cells_pLN", "CD38+_CD8_CD8+ T cells_pLN") #string will be split at _ for graph creation
 
 CD25_CD38_facetLabels <- c("Tn", "Tnl", "Tcm", "Tem", "Temra")
 
-CD25_CD38_boxplot_graphs <- lapply(CD25_CD38_boxplot_list, function(c) {
+lapply(CD25_CD38_boxplot_list, function(c) {
   strings <- unlist(strsplit(c, "_"))
-  message(paste("Generating a graph for", strings[1], strings[3]))
+  message(paste("Generating a graph for",strings[4], strings[1], strings[3]))
   graph <- dfDiseaseScales %>%
     filter(grepl(strings[1], metric)) %>%
-    filter(!grepl("HLA-DR+", metric)) %>%
-    filter(LN_type != "Spleen") %>%
+    filter(LN_type == strings[4]) %>%
     filter(cd == strings[2]) %>%
     ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
-      ylab(paste("%", strings[1], "of", strings[3])) +
+      ylab(paste("% of", strings[3])) +
       geom_boxplot(width = 0.8,
                outlier.shape = NA,
                show.legend = FALSE) +

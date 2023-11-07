@@ -1172,24 +1172,23 @@ dfDiseaseScales <- dfLineageFilter %>%
                         str_detect(metric, "Tnl") ~ "Tnl",
                         str_detect(metric, "Tcm") ~ "Tcm",
                         str_detect(metric, "Tem ") ~ "Tem",
-                        str_detect(metric, "Temra") ~ "Temra",q
+                        str_detect(metric, "Temra") ~ "Temra",
                         str_detect(metric, "Tn$") ~ "Tn",
                         str_detect(metric, "Tem$") ~ "Tem",
                         str_detect(metric, "CD4 Mem") ~ "Mem")) %>%
   mutate(tpop = as_factor(tpop)) %>%
   mutate(tpop = fct_relevel(tpop, "Tn", "Tnl", "Tcm", "Tem", "Temra"))
 
-CD25_CD38_boxplot_list <- list("CD25+_CD4_CD4+ T cells" , "CD25+_CD8_CD8+ T cells", "CD38+_CD4_CD4+ T cells", "CD38+_CD8_CD8+ T cells") #string will be split at _ for graph creation
+CD25_CD38_boxplot_list <- list("CD25+_CD4_CD4+ T cells_pLN" , "CD25+_CD8_CD8+ T cells_pLN", "CD38+_CD4_CD4+ T cells_pLN", "CD38+_CD8_CD8+ T cells_pLN") #string will be split at _ for graph creation
 
 CD25_CD38_facetLabels <- c("Tn", "Tnl", "Tcm", "Tem", "Temra")
 
-CD25_CD38_boxplot_graphs <- lapply(CD25_CD38_boxplot_list, function(c) {
+lapply(CD25_CD38_boxplot_list, function(c) {
   strings <- unlist(strsplit(c, "_"))
-  message(paste("Generating a graph for", strings[1], strings[3]))
+  message(paste("Generating a graph for",strings[4], strings[1], strings[3]))
   graph <- dfDiseaseScales %>%
     filter(grepl(strings[1], metric)) %>%
-    filter(!grepl("HLA-DR+", metric)) %>%
-    filter(LN_type != "Spleen") %>%
+    filter(LN_type == strings[4]) %>%
     filter(cd == strings[2]) %>%
     ggplot(aes(`Disease Status`, value, color = `Disease Status`)) +
       ylab(paste("% of", strings[3])) +
@@ -1283,3 +1282,31 @@ CD27_CD127_graphs <- lapply(CD27_CD127_tpop_list, function(t) {
   saveRDS(CD27_CD127_graph, file = paste0("./outs/rds/", cdlist[1], " ", cdlist[2], " CD27-CD127", " ridgelines.RDS"))
 })
 ```
+
+Section 7: Immune Population Frequency Across Number of Autoantibodies
+```{r Section 7: Plotting certain }
+TregsAAbs <- dfLineageFilter %>%
+  filter(LN_type == "pLN") %>%
+  filter(metric == "CD4 Mem Tregs") %>%
+  ggplot(aes(Aabs, value, color = Aabs)) +
+    geom_boxplot(width = 0.8,
+                 outlier.shape = NA,
+                 show.legend = FALSE) +
+    geom_point(
+      size = 1,
+      stroke = 0.2,
+      alpha = 0.4,
+      show.legend = FALSE,
+      position = position_jitterdodge(jitter.width = 1, dodge.width = 0.8)) +
+    theme_classic() +
+    theme(axis.title.x = element_blank(),
+     axis.text.x = element_text(angle = 45, hjust = 1),
+     axis.title.y = element_text(size = 8))
+TregsAAbs
+
+dftest <- dfDiseaseScales %>%
+    filter(grepl("CD25", metric)) %>%
+    filter(!grepl("HLA-DR+", metric)) %>%
+    filter(LN_type != "Spleen")
+```
+
